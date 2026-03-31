@@ -37,36 +37,24 @@ def init_db():
     conn.close()
 init_db()
 
-# دالة عرض الـ PDF بدون download_button جواها
-def display_pdf(file_name):
+def get_pdf_base64(file_name):
+    """قراءة الملف وتحويله إلى base64"""
     try:
         if not file_name:
-            st.error("لا يوجد ملف مرفق")
             return None
         
         actual_path = os.path.join(UPLOAD_FOLDER, file_name)
        
         if not os.path.exists(actual_path):
-            st.error(f"الملف غير موجود: {actual_path}")
             return None
         
         with open(actual_path, "rb") as f:
             pdf_bytes = f.read()
         
-        # عرض PDF
         base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-        pdf_display = f'''
-        <iframe src="data:application/pdf;base64,{base64_pdf}" 
-                width="100%" height="700" 
-                type="application/pdf" style="border: none;">
-        </iframe>
-        '''
-        st.markdown(pdf_display, unsafe_allow_html=True)
-        
-        return pdf_bytes
+        return base64_pdf
         
     except Exception as e:
-        st.error(f"خطأ في عرض الملف: {e}")
         return None
 
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
@@ -193,23 +181,35 @@ with tab2:
             row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
             conn.close()
             
-            # عرض الملف خارج الفورم
+            # عرض زر فتح PDF في تاب جديد
             if row['file_name']:
                 st.info(f"📎 الملف المرفق: {row['file_name']}")
                 
-                # عرض PDF
-                pdf_data = display_pdf(row['file_name'])
+                # الحصول على base64 للملف
+                pdf_base64 = get_pdf_base64(row['file_name'])
                 
-                # زر التحميل خارج الفورم
-                if pdf_data:
-                    st.download_button(
-                        label="⬇️ تحميل التقرير PDF",
-                        data=pdf_data,
-                        file_name=row['file_name'],
-                        mime="application/pdf",
-                        use_container_width=True,
-                        key=f"download_{selected_id}"
-                    )
+                if pdf_base64:
+                    # إنشاء رابط لفتح PDF في تاب جديد
+                    pdf_link = f'data:application/pdf;base64,{pdf_base64}'
+                    
+                    # زر لفتح PDF في تاب جديد
+                    st.markdown(f'''
+                        <a href="{pdf_link}" target="_blank" style="
+                            display: inline-block;
+                            background-color: #ff4b4b;
+                            color: white;
+                            padding: 8px 16px;
+                            text-decoration: none;
+                            border-radius: 5px;
+                            font-weight: bold;
+                            margin: 10px 0;
+                        ">
+                            📄 عرض التقرير (يفتح في تاب جديد)
+                        </a>
+                    ''', unsafe_allow_html=True)
+                else:
+                    st.error("⚠️ الملف غير موجود")
+                
                 st.markdown("---")
             else:
                 st.info("📭 لا يوجد ملف مرفق")
