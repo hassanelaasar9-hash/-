@@ -35,7 +35,7 @@ def init_db():
     conn.commit(); conn.close()
 init_db()
 
-# التعديل الوحيد: دالة عرض الـ PDF (محسنة + download بره الـ form)
+# التعديل الوحيد: دالة عرض الـ PDF (download_button بره الـ form)
 def display_pdf(file_path):
     try:
         filename = os.path.basename(file_path)
@@ -48,19 +48,19 @@ def display_pdf(file_path):
         with open(actual_path, "rb") as f:
             pdf_bytes = f.read()
         
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.download_button(
-                label="⬇️ تحميل التقرير PDF",
-                data=pdf_bytes,
-                file_name=filename,
-                mime="application/pdf",
-                use_container_width=True
-            )
-        with col2:
-            st.info("📌 جرب تشغل المتصفح **Firefox** لو عايز تشوف الـ PDF مباشرة في الصفحة")
+        # زرار التحميل (بره أي form)
+        st.download_button(
+            label="⬇️ تحميل التقرير PDF",
+            data=pdf_bytes,
+            file_name=filename,
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"download_{filename}"   # key عشان ميحصلش تعارض
+        )
         
-        # محاولة عرض بسيطة (هتشتغل أحسن على Firefox)
+        st.info("⚠️ عرض الـ PDF داخل الصفحة بيشتغل أحسن على **Firefox**. على Chrome غالبًا بيحظر.")
+        
+        # محاولة عرض الـ PDF (iframe)
         base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
         pdf_display = f'''
         <iframe src="data:application/pdf;base64,{base64_pdf}" 
