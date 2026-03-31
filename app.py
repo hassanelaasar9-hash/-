@@ -40,12 +40,20 @@ def init_db():
 
 init_db()
 
+# --- تعديل دالة العرض لتعمل أونلاين بشكل صحيح ---
 def display_pdf(file_path):
     try:
-        with open(file_path, "rb") as f:
-            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-        pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf">'
-        st.markdown(pdf_display, unsafe_allow_html=True)
+        # التأكد من المسار سواء كان مطلق أو نسبي ليناسب السيرفر
+        base_name = os.path.basename(file_path)
+        actual_path = os.path.join(UPLOAD_FOLDER, base_name)
+        
+        if os.path.exists(actual_path):
+            with open(actual_path, "rb") as f:
+                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+            pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf">'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.error("⚠️ الملف غير موجود على السيرفر، تأكد من رفعه مجدداً أونلاين.")
     except Exception as e:
         st.error(f"خطأ في عرض الملف: {e}")
 
@@ -191,7 +199,6 @@ with tab2:
                 u_notes = st.text_area("ملاحظات إضافية", row['notes'])
                 st.write(f"**وصف العطل المسجل:** {row['report']}")
 
-                # --- التعديل: جزء رفع ملف PDF جديد داخل التعديل ---
                 st.markdown("---")
                 if not row['file_path']:
                     st.warning("⚠️ لا يوجد تقرير PDF مسجل لهذه المعاينة")
@@ -222,7 +229,7 @@ with tab2:
                     st.rerun()
                     
                 if b_pdf.form_submit_button("📄 عرض ملف الـ PDF"):
-                    if row['file_path'] and os.path.exists(row['file_path']):
+                    if row['file_path']:
                         display_pdf(row['file_path'])
                     else:
                         st.error("❌ لا يوجد ملف مرفق لعرضه")
