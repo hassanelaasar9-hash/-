@@ -56,7 +56,7 @@ def init_db():
 init_db()
 
 def display_pdf(file_name):
-    """عرض ملف PDF من اسم الملف المخزن في قاعدة البيانات"""
+    """عرض ملف PDF مباشرة في الصفحة"""
     try:
         if not file_name:
             st.error("❌ لا يوجد ملف مرفق")
@@ -66,34 +66,43 @@ def display_pdf(file_name):
        
         if not os.path.exists(actual_path):
             st.error(f"⚠️ الملف غير موجود: {file_name}")
-            st.info("💡 قد يكون الملف قد تم حذفه أو نقله. يمكنك رفع ملف جديد من خلال التعديل.")
             return
         
+        # قراءة الملف
         with open(actual_path, "rb") as f:
             pdf_bytes = f.read()
         
-        # أزرار التحميل والعرض خارج الـ form
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.download_button(
-                label="⬇️ تحميل التقرير PDF",
-                data=pdf_bytes,
-                file_name=file_name,
-                mime="application/pdf",
-                use_container_width=True,
-                key=f"download_{file_name}"
-            )
-        with col2:
-            st.info("📌 جرب تشغل المتصفح **Firefox** لو عايز تشوف الـ PDF مباشرة في الصفحة")
-        
+        # عرض PDF باستخدام HTML object (يعمل في جميع المتصفحات)
         base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+        # PDF viewer متوافق مع كل المتصفحات
         pdf_display = f'''
-        <iframe src="data:application/pdf;base64,{base64_pdf}" 
-                width="100%" height="700" 
-                type="application/pdf" style="border: none;">
-        </iframe>
+        <div style="width:100%; height:800px; border:1px solid #444; border-radius:10px; overflow:auto;">
+            <object data="data:application/pdf;base64,{base64_pdf}" 
+                    type="application/pdf" 
+                    width="100%" 
+                    height="100%"
+                    style="border:none;">
+                <embed src="data:application/pdf;base64,{base64_pdf}" 
+                       type="application/pdf" 
+                       width="100%" 
+                       height="100%"/>
+                <p>لا يمكن عرض PDF. <a href="data:application/pdf;base64,{base64_pdf}" download="{file_name}">اضغط للتحميل</a></p>
+            </object>
+        </div>
         '''
+        
         st.markdown(pdf_display, unsafe_allow_html=True)
+        
+        # زر تحميل أسفل العرض
+        st.download_button(
+            label="⬇️ تحميل التقرير PDF",
+            data=pdf_bytes,
+            file_name=file_name,
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"download_{file_name}"
+        )
         
     except Exception as e:
         st.error(f"خطأ في عرض الملف: {e}")
@@ -245,13 +254,12 @@ with tab2:
             conn = get_db_connection()
             row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
             conn.close()
-           
-            # عرض الملف خارج الـ form
+            
+            # عرض الملف مباشرة بدون زر - يظهر تلقائياً
             if row['file_name']:
-                st.info(f"📎 الملف المرفق الحالي: {row['file_name']}")
-                # عرض زر عرض الملف خارج الفورم
-                if st.button("📄 عرض ملف الـ PDF", key=f"view_pdf_{selected_id}"):
-                    display_pdf(row['file_name'])
+                st.info(f"📎 الملف المرفق: {row['file_name']}")
+                # عرض PDF مباشرة
+                display_pdf(row['file_name'])
                 st.markdown("---")
             
             with st.form(f"edit_form_{selected_id}"):
