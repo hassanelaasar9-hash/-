@@ -28,7 +28,6 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # إنشاء جدول repairs مع file_name بدلاً من file_path
     cursor.execute('''CREATE TABLE IF NOT EXISTS repairs
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   client_name TEXT, 
@@ -43,7 +42,6 @@ def init_db():
                   file_name TEXT, 
                   cost TEXT)''')
     
-    # إضافة عمود file_name إذا كان موجوداً بالفعل باسم file_path (للتحديث من الإصدار القديم)
     try:
         cursor.execute("ALTER TABLE repairs ADD COLUMN file_name TEXT")
     except:
@@ -74,6 +72,7 @@ def display_pdf(file_name):
         with open(actual_path, "rb") as f:
             pdf_bytes = f.read()
         
+        # أزرار التحميل والعرض خارج الـ form
         col1, col2 = st.columns([1, 1])
         with col1:
             st.download_button(
@@ -81,7 +80,8 @@ def display_pdf(file_name):
                 data=pdf_bytes,
                 file_name=file_name,
                 mime="application/pdf",
-                use_container_width=True
+                use_container_width=True,
+                key=f"download_{file_name}"
             )
         with col2:
             st.info("📌 جرب تشغل المتصفح **Firefox** لو عايز تشوف الـ PDF مباشرة في الصفحة")
@@ -246,6 +246,14 @@ with tab2:
             row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
             conn.close()
            
+            # عرض الملف خارج الـ form
+            if row['file_name']:
+                st.info(f"📎 الملف المرفق الحالي: {row['file_name']}")
+                # عرض زر عرض الملف خارج الفورم
+                if st.button("📄 عرض ملف الـ PDF", key=f"view_pdf_{selected_id}"):
+                    display_pdf(row['file_name'])
+                st.markdown("---")
+            
             with st.form(f"edit_form_{selected_id}"):
                 col_l, col_r = st.columns(2)
                 with col_l:
@@ -265,12 +273,9 @@ with tab2:
                 st.write(f"**وصف العطل المسجل:** {row['report']}")
                 st.markdown("---")
                 
-                if row['file_name']:
-                    st.info(f"📎 الملف المرفق الحالي: {row['file_name']}")
-                
                 new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
                 
-                b_save, b_del, b_pdf = st.columns([1, 1, 2])
+                b_save, b_del = st.columns([1, 1])
                
                 if b_save.form_submit_button("💾 حفظ التعديلات"):
                     file_name = row['file_name']
@@ -315,8 +320,5 @@ with tab2:
                     conn.close()
                     st.success("🗑️ تم مسح المعاينة بنجاح!")
                     st.rerun()
-                   
-                if b_pdf.form_submit_button("📄 عرض ملف الـ PDF"):
-                    display_pdf(row['file_name'])
     else:
         st.info("📭 لا توجد سجلات حالياً.")
