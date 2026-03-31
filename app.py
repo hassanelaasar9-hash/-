@@ -41,10 +41,13 @@ def init_db():
 init_db()
 
 def display_pdf(file_path):
-    with open(file_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-    pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf">'
-    st.markdown(pdf_display, unsafe_allow_html=True)
+    try:
+        with open(file_path, "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf">'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"خطأ في عرض الملف: {e}")
 
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 
@@ -86,7 +89,6 @@ with tab3:
                     conn.commit(); conn.close()
                     st.rerun()
 
-# استخراج قائمة الفنيين
 staff_names = ["لم يتم التحديد"] + [row['name'] for _, row in staff_list.iterrows()] if not staff_list.empty else ["لم يتم التحديد"]
 
 # --- التبويب الأول: التسجيل ---
@@ -133,7 +135,6 @@ with tab2:
 
         df = df_raw.copy()
         
-        # --- تعديل: إضافة عمود واتساب للجدول ---
         def make_wa_link(phone_num):
             p = str(phone_num).strip()
             num = p if p.startswith('2') else '2' + p
@@ -150,7 +151,6 @@ with tab2:
 
         st.write(f"🔎 تم العثور على {len(df)} سجل")
         
-        # عرض الجدول مع تحويل عمود الواتساب لرابط قابل للضغط
         event = st.dataframe(
             df.drop(columns=['id']), 
             use_container_width=True, 
@@ -190,13 +190,29 @@ with tab2:
                 
                 u_notes = st.text_area("ملاحظات إضافية", row['notes'])
                 st.write(f"**وصف العطل المسجل:** {row['report']}")
-                
+
+                # --- التعديل: جزء رفع ملف PDF جديد داخل التعديل ---
+                st.markdown("---")
+                if not row['file_path']:
+                    st.warning("⚠️ لا يوجد تقرير PDF مسجل لهذه المعاينة")
+                    new_pdf = st.file_uploader("رفع تقرير PDF الآن", type=['pdf'], key=f"pdf_up_{selected_id}")
+                else:
+                    st.success("✅ يوجد ملف تقرير مسجل")
+                    new_pdf = st.file_uploader("استبدال ملف الـ PDF الحالي", type=['pdf'], key=f"pdf_up_{selected_id}")
+
                 b_save, b_del, b_pdf = st.columns([1, 1, 2])
+                
                 if b_save.form_submit_button("💾 حفظ التعديلات"):
+                    f_path = row['file_path']
+                    if new_pdf:
+                        f_path = os.path.join(UPLOAD_FOLDER, f"{u_name}_{new_pdf.name}")
+                        with open(f_path, "wb") as f: f.write(new_pdf.getbuffer())
+                    
                     conn = get_db_connection()
-                    conn.cursor().execute("UPDATE repairs SET client_name=?, phone=?, tech_name=?, assistant_name=?, cost=?, governorate=?, address=?, notes=?, visit_date=? WHERE id=?",
-                                        (u_name, u_phone, u_tech, u_assist, u_cost, u_gov, u_addr, u_notes, str(u_date), selected_id))
+                    conn.cursor().execute("UPDATE repairs SET client_name=?, phone=?, tech_name=?, assistant_name=?, cost=?, governorate=?, address=?, notes=?, visit_date=?, file_path=? WHERE id=?",
+                                        (u_name, u_phone, u_tech, u_assist, u_cost, u_gov, u_addr, u_notes, str(u_date), f_path, selected_id))
                     conn.commit(); conn.close()
+                    st.success("تم التحديث!")
                     st.rerun()
                 
                 if b_del.form_submit_button("🗑️ مسح المعاينة"):
@@ -209,6 +225,6 @@ with tab2:
                     if row['file_path'] and os.path.exists(row['file_path']):
                         display_pdf(row['file_path'])
                     else:
-                        st.error("❌ لا يوجد ملف مرفق")
+                        st.error("❌ لا يوجد ملف مرفق لعرضه")
     else:
         st.info("لا توجد سجلات حالياً.")
