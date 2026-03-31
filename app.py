@@ -17,6 +17,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+UPLOAD_FOLDER = "uploaded_reports"
+if not os.path.exists(UPLOAD_FOLDER): os.makedirs(UPLOAD_FOLDER)
+
 def get_db_connection():
     conn = sqlite3.connect('expert2m_v6.db')
     conn.row_factory = sqlite3.Row
@@ -24,34 +27,35 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
-    # إضافة عمود file_blob لتخزين محتوى الملف نفسه
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS repairs 
+    # جدول المعاينات
+    conn.cursor().execute('''CREATE TABLE IF NOT EXISTS repairs 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, client_name TEXT, phone TEXT, 
                   tech_name TEXT, assistant_name TEXT, visit_date TEXT, 
                   governorate TEXT, address TEXT, report TEXT, 
-                  notes TEXT, file_path TEXT, cost TEXT, file_blob BLOB)''')
-    
-    # التأكد من وجود العمود لو الجدول قديم
-    try:
-        cursor.execute("ALTER TABLE repairs ADD COLUMN file_blob BLOB")
-    except:
-        pass
-        
-    cursor.execute('''CREATE TABLE IF NOT EXISTS staff 
+                  notes TEXT, file_path TEXT, cost TEXT)''')
+    # جدول الفنيين الجديد
+    conn.cursor().execute('''CREATE TABLE IF NOT EXISTS staff 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
     conn.commit(); conn.close()
 
 init_db()
 
-# --- دالة العرض من قاعدة البيانات مباشرة ---
-def display_pdf_from_db(binary_data):
+# التعديل الوحيد هنا عشان العرض يشتغل أونلاين
+def display_pdf(file_path):
     try:
-        base64_pdf = base64.b64encode(binary_data).decode('utf-8')
-        pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf">'
-        st.markdown(pdf_display, unsafe_allow_html=True)
+        # لو المسار كامل، ناخد اسم الملف بس ونطلعه من الفولدر اللي على السيرفر
+        filename = os.path.basename(file_path)
+        actual_path = os.path.join(UPLOAD_FOLDER, filename)
+        
+        if os.path.exists(actual_path):
+            with open(actual_path, "rb") as f:
+                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+            pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf">'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.error(f"الملف غير موجود في المسار: {actual_path}")
     except Exception as e:
-        st.error("⚠️ فشل عرض الملف المرفق.")
+        st.error(f"خطأ في عرض الملف: {e}")
 
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 
@@ -61,6 +65,7 @@ tab1, tab2, tab3 = st.tabs(["➕ تسجيل معاينة جديدة", "📊 سج
 with tab3:
     st.subheader("👥 إدارة قاعدة بيانات الفنيين")
     col_f1, col_f2 = st.columns([1, 1])
+    
     with col_f1:
         with st.form("add_staff_form"):
             new_staff = st.text_input("اسم الفني الجديد")
@@ -76,6 +81,7 @@ with tab3:
                         st.error("الاسم موجود بالفعل")
                 else:
                     st.warning("برجاء كتابة اسم")
+
     with col_f2:
         conn = get_db_connection()
         staff_list = pd.read_sql_query("SELECT * FROM staff", conn)
@@ -111,10 +117,13 @@ with tab1:
         file = st.file_uploader("ارفع التقرير (PDF)", type=['pdf'])
         
         if st.form_submit_button("حفظ البيانات النهائية"):
-            file_data = file.read() if file else None
+            f_path = ""
+            if file:
+                f_path = os.path.join(UPLOAD_FOLDER, f"{name}_{file.name}")
+                with open(f_path, "wb") as f: f.write(file.getbuffer())
             conn = get_db_connection()
-            conn.cursor().execute("INSERT INTO repairs (client_name, phone, visit_date, governorate, address, report, file_blob, cost, tech_name, assistant_name, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                 (name, phone, str(date_v), gov, addr, rep, file_data, cost, "", "", ""))
+            conn.cursor().execute("INSERT INTO repairs (client_name, phone, visit_date, governorate, address, report, file_path, cost, tech_name, assistant_name, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                                 (name, phone, str(date_v), gov, addr, rep, f_path, cost, "", "", ""))
             conn.commit(); conn.close()
             st.success("✅ تم الحفظ بنجاح!")
 
@@ -133,10 +142,12 @@ with tab2:
             date_filter = st.date_input("📅 فلترة بالتاريخ", value=None)
 
         df = df_raw.copy()
+        
         def make_wa_link(phone_num):
             p = str(phone_num).strip()
             num = p if p.startswith('2') else '2' + p
             return f"https://wa.me/{num}"
+        
         df['واتساب'] = df['التليفون'].apply(make_wa_link)
 
         if search_query:
@@ -147,13 +158,22 @@ with tab2:
             df = df[df['التاريخ'] == str(date_filter)]
 
         st.write(f"🔎 تم العثور على {len(df)} سجل")
-        event = st.dataframe(df.drop(columns=['id']), use_container_width=True, on_select="rerun", selection_mode="single-row",
-            column_config={"واتساب": st.column_config.LinkColumn("واتساب", display_text="💬 مراسلة")})
+        
+        event = st.dataframe(
+            df.drop(columns=['id']), 
+            use_container_width=True, 
+            on_select="rerun", 
+            selection_mode="single-row",
+            column_config={
+                "واتساب": st.column_config.LinkColumn("واتساب", display_text="💬 مراسلة")
+            }
+        )
         
         selected_rows = event.selection.rows
         if selected_rows:
             selected_index = selected_rows[0]
             selected_id = int(df.iloc[selected_index]['id'])
+            
             st.divider()
             st.subheader(f"🛠️ إجراءات التعديل: {df.iloc[selected_index]['العميل']}")
             
@@ -180,18 +200,19 @@ with tab2:
                 st.write(f"**وصف العطل المسجل:** {row['report']}")
 
                 st.markdown("---")
-                new_pdf = st.file_uploader("تحديث/رفع ملف الـ PDF", type=['pdf'], key=f"pdf_up_{selected_id}")
+                new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
 
                 b_save, b_del, b_pdf = st.columns([1, 1, 2])
                 
                 if b_save.form_submit_button("💾 حفظ التعديلات"):
-                    f_blob = row['file_blob']
+                    f_path = row['file_path']
                     if new_pdf:
-                        f_blob = new_pdf.read()
+                        f_path = os.path.join(UPLOAD_FOLDER, f"{u_name}_{new_pdf.name}")
+                        with open(f_path, "wb") as f: f.write(new_pdf.getbuffer())
                     
                     conn = get_db_connection()
-                    conn.cursor().execute("UPDATE repairs SET client_name=?, phone=?, tech_name=?, assistant_name=?, cost=?, governorate=?, address=?, notes=?, visit_date=?, file_blob=? WHERE id=?",
-                                        (u_name, u_phone, u_tech, u_assist, u_cost, u_gov, u_addr, u_notes, str(u_date), f_blob, selected_id))
+                    conn.cursor().execute("UPDATE repairs SET client_name=?, phone=?, tech_name=?, assistant_name=?, cost=?, governorate=?, address=?, notes=?, visit_date=?, file_path=? WHERE id=?",
+                                        (u_name, u_phone, u_tech, u_assist, u_cost, u_gov, u_addr, u_notes, str(u_date), f_path, selected_id))
                     conn.commit(); conn.close()
                     st.success("تم التحديث!")
                     st.rerun()
@@ -203,7 +224,9 @@ with tab2:
                     st.rerun()
                     
                 if b_pdf.form_submit_button("📄 عرض ملف الـ PDF"):
-                    if row['file_blob']:
-                        display_pdf_from_db(row['file_blob'])
+                    if row['file_path']:
+                        display_pdf(row['file_path'])
                     else:
-                        st.error("❌ لا يوجد ملف مرفق لعرضه")
+                        st.error("❌ لا يوجد ملف مرفق")
+    else:
+        st.info("لا توجد سجلات حالياً.")
