@@ -25,46 +25,60 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
-    # جدول المعاينات
     conn.cursor().execute('''CREATE TABLE IF NOT EXISTS repairs
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, client_name TEXT, phone TEXT,
                   tech_name TEXT, assistant_name TEXT, visit_date TEXT,
                   governorate TEXT, address TEXT, report TEXT,
                   notes TEXT, file_path TEXT, cost TEXT)''')
-    # جدول الفنيين الجديد
     conn.cursor().execute('''CREATE TABLE IF NOT EXISTS staff
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
     conn.commit(); conn.close()
 init_db()
 
-# التعديل الوحيد: دالة عرض الـ PDF (تم تحسينها عشان Chrome على السيرفر)
+# التعديل الوحيد: دالة عرض الـ PDF (نسخة محسنة + زرار تحميل)
 def display_pdf(file_path):
     try:
         filename = os.path.basename(file_path)
         actual_path = os.path.join(UPLOAD_FOLDER, filename)
        
-        if os.path.exists(actual_path):
-            with open(actual_path, "rb") as f:
-                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-            
-            # استخدام st.components.v1.iframe مع sandbox فارغ عشان نتجنب حظر Chrome
-            html = f'''
-            <iframe 
-                src="data:application/pdf;base64,{base64_pdf}" 
-                width="100%" 
-                height="700" 
-                type="application/pdf"
-                sandbox="">
-            </iframe>
-            '''
-            st.components.v1.html(html, height=720, scrolling=True)
-        else:
-            st.error(f"الملف غير موجود في المسار: {actual_path}")
+        if not os.path.exists(actual_path):
+            st.error(f"الملف غير موجود: {actual_path}")
+            return
+        
+        # قراءة الملف
+        with open(actual_path, "rb") as f:
+            pdf_bytes = f.read()
+            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+        # زرار التحميل (ده هيشتغل 100% على كل المتصفحات)
+        st.download_button(
+            label="⬇️ تحميل التقرير PDF",
+            data=pdf_bytes,
+            file_name=filename,
+            mime="application/pdf",
+            use_container_width=True
+        )
+        
+        st.info("⚠️ لو الـ PDF مش ظاهر تحت، جرب المتصفح **Firefox** أو حمل الملف.")
+        
+        # محاولة العرض (الطريقة الأقل مشاكل حاليًا)
+        pdf_display = f'''
+        <iframe 
+            src="data:application/pdf;base64,{base64_pdf}" 
+            width="100%" 
+            height="700" 
+            type="application/pdf"
+            style="border: none;">
+        </iframe>
+        '''
+        st.markdown(pdf_display, unsafe_allow_html=True)
+        
     except Exception as e:
         st.error(f"خطأ في عرض الملف: {e}")
 
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 tab1, tab2, tab3 = st.tabs(["➕ تسجيل معاينة جديدة", "📊 سجل المعاينات والإدارة", "👥 إدارة الفنيين"])
+
 # --- التبويب الثالث: إدارة الفنيين ---
 with tab3:
     st.subheader("👥 إدارة قاعدة بيانات الفنيين")
@@ -99,7 +113,9 @@ with tab3:
                     conn.cursor().execute("DELETE FROM staff WHERE id=?", (row['id'],))
                     conn.commit(); conn.close()
                     st.rerun()
+
 staff_names = ["لم يتم التحديد"] + [row['name'] for _, row in staff_list.iterrows()] if not staff_list.empty else ["لم يتم التحديد"]
+
 # --- التبويب الأول: التسجيل ---
 with tab1:
     st.subheader("📝 إضافة بيانات العميل")
@@ -127,6 +143,7 @@ with tab1:
                                  (name, phone, str(date_v), gov, addr, rep, f_path, cost, "", "", ""))
             conn.commit(); conn.close()
             st.success("✅ تم الحفظ بنجاح!")
+
 # --- التبويب الثاني: الإدارة ---
 with tab2:
     st.subheader("📊 سجل المعاينات")
