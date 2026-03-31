@@ -37,26 +37,6 @@ def init_db():
     conn.close()
 init_db()
 
-def get_pdf_base64(file_name):
-    """قراءة الملف وتحويله إلى base64"""
-    try:
-        if not file_name:
-            return None
-        
-        actual_path = os.path.join(UPLOAD_FOLDER, file_name)
-       
-        if not os.path.exists(actual_path):
-            return None
-        
-        with open(actual_path, "rb") as f:
-            pdf_bytes = f.read()
-        
-        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-        return base64_pdf
-        
-    except Exception as e:
-        return None
-
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 tab1, tab2, tab3 = st.tabs(["➕ تسجيل معاينة جديدة", "📊 سجل المعاينات والإدارة", "👥 إدارة الفنيين"])
 
@@ -180,40 +160,6 @@ with tab2:
             conn = get_db_connection()
             row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
             conn.close()
-            
-            # عرض زر فتح PDF في تاب جديد
-            if row['file_name']:
-                st.info(f"📎 الملف المرفق: {row['file_name']}")
-                
-                # الحصول على base64 للملف
-                pdf_base64 = get_pdf_base64(row['file_name'])
-                
-                if pdf_base64:
-                    # إنشاء رابط لفتح PDF في تاب جديد
-                    pdf_link = f'data:application/pdf;base64,{pdf_base64}'
-                    
-                    # زر لفتح PDF في تاب جديد
-                    st.markdown(f'''
-                        <a href="{pdf_link}" target="_blank" style="
-                            display: inline-block;
-                            background-color: #ff4b4b;
-                            color: white;
-                            padding: 8px 16px;
-                            text-decoration: none;
-                            border-radius: 5px;
-                            font-weight: bold;
-                            margin: 10px 0;
-                        ">
-                            📄 عرض التقرير (يفتح في تاب جديد)
-                        </a>
-                    ''', unsafe_allow_html=True)
-                else:
-                    st.error("⚠️ الملف غير موجود")
-                
-                st.markdown("---")
-            else:
-                st.info("📭 لا يوجد ملف مرفق")
-                st.markdown("---")
            
             with st.form(f"edit_form_{selected_id}"):
                 col_l, col_r = st.columns(2)
@@ -234,7 +180,7 @@ with tab2:
                 st.write(f"**وصف العطل المسجل:** {row['report']}")
                 st.markdown("---")
                 new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
-                b_save, b_del = st.columns([1, 1])
+                b_save, b_del, b_pdf = st.columns([1, 1, 2])
                
                 if b_save.form_submit_button("💾 حفظ التعديلات"):
                     file_name = row['file_name']
@@ -272,7 +218,27 @@ with tab2:
                     conn.cursor().execute("DELETE FROM repairs WHERE id=?", (selected_id,))
                     conn.commit()
                     conn.close()
-                    st.success("تم المسح!")
                     st.rerun()
+                   
+                if b_pdf.form_submit_button("📄 عرض ملف الـ PDF"):
+                    if row['file_name']:
+                        # فتح PDF في تاب جديد
+                        file_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
+                        if os.path.exists(file_path):
+                            with open(file_path, "rb") as f:
+                                pdf_bytes = f.read()
+                            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                            # فتح في تاب جديد
+                            js_code = f'''
+                                <script>
+                                    window.open("data:application/pdf;base64,{base64_pdf}", "_blank");
+                                </script>
+                            '''
+                            st.components.v1.html(js_code, height=0)
+                            st.success("✅ تم فتح التقرير في تاب جديد!")
+                        else:
+                            st.error("❌ الملف غير موجود")
+                    else:
+                        st.error("❌ لا يوجد ملف مرفق")
     else:
         st.info("لا توجد سجلات حالياً.")
