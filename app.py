@@ -15,7 +15,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-UPLOAD_FOLDER = "uploaded_reports"
+UPLOAD_FOLDER = os.path.abspath("uploaded_reports")
 if not os.path.exists(UPLOAD_FOLDER): 
     os.makedirs(UPLOAD_FOLDER)
 
@@ -30,57 +30,44 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, client_name TEXT, phone TEXT,
                   tech_name TEXT, assistant_name TEXT, visit_date TEXT,
                   governorate TEXT, address TEXT, report TEXT,
-                  notes TEXT, file_path TEXT, cost TEXT)''')
+                  notes TEXT, file_name TEXT, cost TEXT)''')
     conn.cursor().execute('''CREATE TABLE IF NOT EXISTS staff
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 init_db()
 
-# ====================== التعديل الوحيد هنا ======================
-def display_pdf(file_path):
+# دالة عرض الـ PDF بدون download_button جواها
+def display_pdf(file_name):
     try:
-        if not file_path:
-            st.error("❌ لا يوجد ملف مرفق")
-            return
+        if not file_name:
+            st.error("لا يوجد ملف مرفق")
+            return None
         
-        filename = os.path.basename(file_path)
-        actual_path = os.path.join(UPLOAD_FOLDER, filename)
+        actual_path = os.path.join(UPLOAD_FOLDER, file_name)
        
         if not os.path.exists(actual_path):
-            st.error(f"الملف غير موجود: {filename}")
-            return
+            st.error(f"الملف غير موجود: {actual_path}")
+            return None
         
         with open(actual_path, "rb") as f:
             pdf_bytes = f.read()
         
-        # زرار التحميل
-        st.download_button(
-            label="⬇️ تحميل التقرير PDF",
-            data=pdf_bytes,
-            file_name=filename,
-            mime="application/pdf",
-            use_container_width=True,
-            key=f"download_{filename}"
-        )
-        
-        # فتح في تاب جديد
+        # عرض PDF
         base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-        pdf_url = f"data:application/pdf;base64,{base64_pdf}"
+        pdf_display = f'''
+        <iframe src="data:application/pdf;base64,{base64_pdf}" 
+                width="100%" height="700" 
+                type="application/pdf" style="border: none;">
+        </iframe>
+        '''
+        st.markdown(pdf_display, unsafe_allow_html=True)
         
-        st.markdown(f"""
-            <a href="{pdf_url}" target="_blank" style="text-decoration:none;">
-                <button style="background-color:#28a745; color:white; padding:14px 24px; 
-                border:none; border-radius:8px; font-size:17px; width:100%; cursor:pointer; margin-top:8px;">
-                    📄 فتح التقرير في تبويب جديد
-                </button>
-            </a>
-        """, unsafe_allow_html=True)
-        
-        st.info("✅ اضغط على الزر الأخضر أعلاه لفتح الـ PDF في تبويب جديد")
+        return pdf_bytes
         
     except Exception as e:
         st.error(f"خطأ في عرض الملف: {e}")
-# ================================================================
+        return None
 
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 tab1, tab2, tab3 = st.tabs(["➕ تسجيل معاينة جديدة", "📊 سجل المعاينات والإدارة", "👥 إدارة الفنيين"])
@@ -98,7 +85,8 @@ with tab3:
                     try:
                         conn = get_db_connection()
                         conn.cursor().execute("INSERT INTO staff (name) VALUES (?)", (new_staff,))
-                        conn.commit(); conn.close()
+                        conn.commit()
+                        conn.close()
                         st.success(f"تم إضافة {new_staff}")
                         st.rerun()
                     except:
@@ -117,7 +105,8 @@ with tab3:
                 if c_del.button("حذف", key=f"del_st_{row['id']}"):
                     conn = get_db_connection()
                     conn.cursor().execute("DELETE FROM staff WHERE id=?", (row['id'],))
-                    conn.commit(); conn.close()
+                    conn.commit()
+                    conn.close()
                     st.rerun()
 
 staff_names = ["لم يتم التحديد"] + [row['name'] for _, row in staff_list.iterrows()] if not staff_list.empty else ["لم يتم التحديد"]
@@ -140,27 +129,25 @@ with tab1:
         file = st.file_uploader("ارفع التقرير (PDF)", type=['pdf'])
        
         if st.form_submit_button("حفظ البيانات النهائية"):
-            f_path = ""
+            file_name = ""
             if file:
-                safe_name = f"{name.replace(' ', '_')}_{file.name}"
-                f_path = os.path.join(UPLOAD_FOLDER, safe_name)
-                with open(f_path, "wb") as f: 
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                file_name = f"{name}_{timestamp}_{file.name}"
+                file_path = os.path.join(UPLOAD_FOLDER, file_name)
+                with open(file_path, "wb") as f:
                     f.write(file.getbuffer())
-                saved_path = safe_name
-            else:
-                saved_path = ""
-            
             conn = get_db_connection()
-            conn.cursor().execute("INSERT INTO repairs (client_name, phone, visit_date, governorate, address, report, file_path, cost, tech_name, assistant_name, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                                 (name, phone, str(date_v), gov, addr, rep, saved_path, cost, "", "", ""))
-            conn.commit(); conn.close()
+            conn.cursor().execute("INSERT INTO repairs (client_name, phone, visit_date, governorate, address, report, file_name, cost, tech_name, assistant_name, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                                 (name, phone, str(date_v), gov, addr, rep, file_name, cost, "", "", ""))
+            conn.commit()
+            conn.close()
             st.success("✅ تم الحفظ بنجاح!")
 
 # --- التبويب الثاني: الإدارة ---
 with tab2:
     st.subheader("📊 سجل المعاينات")
     conn = get_db_connection()
-    df_raw = pd.read_sql_query("SELECT id, client_name as 'العميل', phone as 'التليفون', tech_name as 'الفني', cost as 'التكلفة', visit_date as 'التاريخ' FROM repairs ORDER BY id DESC", conn)
+    df_raw = pd.read_sql_query("SELECT id, client_name as 'العميل', phone as 'التليفون', tech_name as 'الفني', cost as 'التكلفة', visit_date as 'التاريخ', file_name FROM repairs ORDER BY id DESC", conn)
     conn.close()
     if not df_raw.empty:
         search_col1, search_col2 = st.columns([2, 1])
@@ -185,7 +172,7 @@ with tab2:
         st.write(f"🔎 تم العثور على {len(df)} سجل")
        
         event = st.dataframe(
-            df.drop(columns=['id']),
+            df.drop(columns=['id', 'file_name']),
             use_container_width=True,
             on_select="rerun",
             selection_mode="single-row",
@@ -205,6 +192,28 @@ with tab2:
             conn = get_db_connection()
             row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
             conn.close()
+            
+            # عرض الملف خارج الفورم
+            if row['file_name']:
+                st.info(f"📎 الملف المرفق: {row['file_name']}")
+                
+                # عرض PDF
+                pdf_data = display_pdf(row['file_name'])
+                
+                # زر التحميل خارج الفورم
+                if pdf_data:
+                    st.download_button(
+                        label="⬇️ تحميل التقرير PDF",
+                        data=pdf_data,
+                        file_name=row['file_name'],
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key=f"download_{selected_id}"
+                    )
+                st.markdown("---")
+            else:
+                st.info("📭 لا يوجد ملف مرفق")
+                st.markdown("---")
            
             with st.form(f"edit_form_{selected_id}"):
                 col_l, col_r = st.columns(2)
@@ -217,7 +226,7 @@ with tab2:
                     u_assist = st.selectbox("المساعد", staff_names, index=current_assist_idx)
                 with col_r:
                     u_cost = st.text_input("التكلفة", row['cost'])
-                    u_gov = st.selectbox("المحافظة", ALL_GOVS, index=ALL_GOVS.index(row['governorate']) if row['governorate'] in ALL_GOVS else 0)
+                    u_gov = st.selectbox("المحافظة", ALL_GOVS, index=ALL_GOVS.index(row['governorate']))
                     u_addr = st.text_input("العنوان", row['address'])
                     u_date = st.date_input("تاريخ المعاينة", datetime.strptime(row['visit_date'], '%Y-%m-%d'))
                
@@ -225,36 +234,45 @@ with tab2:
                 st.write(f"**وصف العطل المسجل:** {row['report']}")
                 st.markdown("---")
                 new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
-                b_save, b_del, b_pdf = st.columns([1, 1, 2])
+                b_save, b_del = st.columns([1, 1])
                
                 if b_save.form_submit_button("💾 حفظ التعديلات"):
-                    f_path = row['file_path']
+                    file_name = row['file_name']
                     if new_pdf:
-                        safe_name = f"{u_name.replace(' ', '_')}_{new_pdf.name}"
-                        f_path = os.path.join(UPLOAD_FOLDER, safe_name)
-                        with open(f_path, "wb") as f: 
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
+                        file_path = os.path.join(UPLOAD_FOLDER, file_name)
+                        with open(file_path, "wb") as f:
                             f.write(new_pdf.getbuffer())
-                        saved_path = safe_name
-                    else:
-                        saved_path = row['file_path']
+                        if row['file_name']:
+                            old_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
+                            if os.path.exists(old_path):
+                                try:
+                                    os.remove(old_path)
+                                except:
+                                    pass
                    
                     conn = get_db_connection()
-                    conn.cursor().execute("UPDATE repairs SET client_name=?, phone=?, tech_name=?, assistant_name=?, cost=?, governorate=?, address=?, notes=?, visit_date=?, file_path=? WHERE id=?",
-                                        (u_name, u_phone, u_tech, u_assist, u_cost, u_gov, u_addr, u_notes, str(u_date), saved_path, selected_id))
-                    conn.commit(); conn.close()
+                    conn.cursor().execute("UPDATE repairs SET client_name=?, phone=?, tech_name=?, assistant_name=?, cost=?, governorate=?, address=?, notes=?, visit_date=?, file_name=? WHERE id=?",
+                                        (u_name, u_phone, u_tech, u_assist, u_cost, u_gov, u_addr, u_notes, str(u_date), file_name, selected_id))
+                    conn.commit()
+                    conn.close()
                     st.success("تم التحديث!")
                     st.rerun()
                
                 if b_del.form_submit_button("🗑️ مسح المعاينة"):
+                    if row['file_name']:
+                        file_to_delete = os.path.join(UPLOAD_FOLDER, row['file_name'])
+                        if os.path.exists(file_to_delete):
+                            try:
+                                os.remove(file_to_delete)
+                            except:
+                                pass
                     conn = get_db_connection()
                     conn.cursor().execute("DELETE FROM repairs WHERE id=?", (selected_id,))
-                    conn.commit(); conn.close()
+                    conn.commit()
+                    conn.close()
+                    st.success("تم المسح!")
                     st.rerun()
-                   
-                if b_pdf.form_submit_button("📄 عرض ملف الـ PDF"):
-                    if row['file_path']:
-                        display_pdf(row['file_path'])
-                    else:
-                        st.error("❌ لا يوجد ملف مرفق")
     else:
         st.info("لا توجد سجلات حالياً.")
