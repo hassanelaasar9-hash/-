@@ -4,7 +4,7 @@ import os
 import pandas as pd
 from datetime import datetime
 import base64
-# 1. إعدادات المظهر (Dark Mode)
+
 st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
 st.markdown("""
     <style>
@@ -35,7 +35,7 @@ def init_db():
     conn.commit(); conn.close()
 init_db()
 
-# التعديل الوحيد: دالة عرض الـ PDF (نسخة محسنة + زرار تحميل)
+# التعديل الوحيد: دالة عرض الـ PDF (محسنة + download بره الـ form)
 def display_pdf(file_path):
     try:
         filename = os.path.basename(file_path)
@@ -45,30 +45,27 @@ def display_pdf(file_path):
             st.error(f"الملف غير موجود: {actual_path}")
             return
         
-        # قراءة الملف
         with open(actual_path, "rb") as f:
             pdf_bytes = f.read()
-            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
         
-        # زرار التحميل (ده هيشتغل 100% على كل المتصفحات)
-        st.download_button(
-            label="⬇️ تحميل التقرير PDF",
-            data=pdf_bytes,
-            file_name=filename,
-            mime="application/pdf",
-            use_container_width=True
-        )
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.download_button(
+                label="⬇️ تحميل التقرير PDF",
+                data=pdf_bytes,
+                file_name=filename,
+                mime="application/pdf",
+                use_container_width=True
+            )
+        with col2:
+            st.info("📌 جرب تشغل المتصفح **Firefox** لو عايز تشوف الـ PDF مباشرة في الصفحة")
         
-        st.info("⚠️ لو الـ PDF مش ظاهر تحت، جرب المتصفح **Firefox** أو حمل الملف.")
-        
-        # محاولة العرض (الطريقة الأقل مشاكل حاليًا)
+        # محاولة عرض بسيطة (هتشتغل أحسن على Firefox)
+        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
         pdf_display = f'''
-        <iframe 
-            src="data:application/pdf;base64,{base64_pdf}" 
-            width="100%" 
-            height="700" 
-            type="application/pdf"
-            style="border: none;">
+        <iframe src="data:application/pdf;base64,{base64_pdf}" 
+                width="100%" height="700" 
+                type="application/pdf" style="border: none;">
         </iframe>
         '''
         st.markdown(pdf_display, unsafe_allow_html=True)
