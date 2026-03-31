@@ -15,7 +15,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# التعديل الوحيد هنا
 UPLOAD_FOLDER = os.path.abspath("uploaded_reports")
 if not os.path.exists(UPLOAD_FOLDER): os.makedirs(UPLOAD_FOLDER)
 
@@ -38,18 +37,27 @@ def init_db():
     conn.commit(); conn.close()
 init_db()
 
-# التعديل الثاني والأخير (دالة عرض الـ PDF فقط)
+# التعديل الوحيد: دالة عرض الـ PDF (تم تحسينها عشان Chrome على السيرفر)
 def display_pdf(file_path):
     try:
-        # لو المسار كامل، ناخد اسم الملف بس ونطلعه من الفولدر اللي على السيرفر
         filename = os.path.basename(file_path)
         actual_path = os.path.join(UPLOAD_FOLDER, filename)
        
         if os.path.exists(actual_path):
             with open(actual_path, "rb") as f:
                 base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="700" type="application/pdf"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
+            
+            # استخدام st.components.v1.iframe مع sandbox فارغ عشان نتجنب حظر Chrome
+            html = f'''
+            <iframe 
+                src="data:application/pdf;base64,{base64_pdf}" 
+                width="100%" 
+                height="700" 
+                type="application/pdf"
+                sandbox="">
+            </iframe>
+            '''
+            st.components.v1.html(html, height=720, scrolling=True)
         else:
             st.error(f"الملف غير موجود في المسار: {actual_path}")
     except Exception as e:
