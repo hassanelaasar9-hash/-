@@ -15,7 +15,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-UPLOAD_FOLDER = os.path.abspath("uploaded_reports")
+# استخدام مجلد ثابت في نفس مكان التطبيق
+UPLOAD_FOLDER = "uploaded_reports"
 if not os.path.exists(UPLOAD_FOLDER): 
     os.makedirs(UPLOAD_FOLDER)
 
@@ -36,6 +37,49 @@ def init_db():
     conn.commit()
     conn.close()
 init_db()
+
+def display_pdf(file_name):
+    try:
+        if not file_name:
+            st.error("لا يوجد ملف مرفق")
+            return
+        
+        actual_path = os.path.join(UPLOAD_FOLDER, file_name)
+       
+        if not os.path.exists(actual_path):
+            st.error(f"الملف غير موجود: {file_name}")
+            return
+        
+        with open(actual_path, "rb") as f:
+            pdf_bytes = f.read()
+        
+        # عرض PDF في الصفحة
+        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+        # PDF viewer يعمل في كل المتصفحات
+        pdf_viewer = f'''
+        <div style="width:100%; height:800px; border:2px solid #444; border-radius:10px; margin-top:20px;">
+            <iframe 
+                src="data:application/pdf;base64,{base64_pdf}" 
+                width="100%" 
+                height="100%" 
+                style="border:none; border-radius:10px;">
+            </iframe>
+        </div>
+        '''
+        st.markdown(pdf_viewer, unsafe_allow_html=True)
+        
+        # زر تحميل تحت العرض
+        st.download_button(
+            label="⬇️ تحميل التقرير PDF",
+            data=pdf_bytes,
+            file_name=file_name,
+            mime="application/pdf",
+            use_container_width=True
+        )
+        
+    except Exception as e:
+        st.error(f"خطأ في عرض الملف: {e}")
 
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 tab1, tab2, tab3 = st.tabs(["➕ تسجيل معاينة جديدة", "📊 سجل المعاينات والإدارة", "👥 إدارة الفنيين"])
@@ -160,37 +204,11 @@ with tab2:
             conn = get_db_connection()
             row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
             conn.close()
-            
-            # عرض الملف خارج الفورم - الحل النهائي
+           
+            # عرض الملف مباشرة في الصفحة
             if row['file_name']:
                 st.info(f"📎 الملف المرفق: {row['file_name']}")
-                
-                # تحويل الملف إلى base64
-                file_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
-                if os.path.exists(file_path):
-                    with open(file_path, "rb") as f:
-                        pdf_bytes = f.read()
-                    base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-                    
-                    # زر لفتح PDF في تاب جديد - شغال 100%
-                    st.markdown(f'''
-                        <a href="data:application/pdf;base64,{base64_pdf}" 
-                           target="_blank" 
-                           style="
-                               display: inline-block;
-                               background-color: #ff4b4b;
-                               color: white;
-                               padding: 10px 20px;
-                               text-decoration: none;
-                               border-radius: 5px;
-                               font-weight: bold;
-                               margin-bottom: 20px;
-                           ">
-                           📄 عرض التقرير (يفتح في تاب جديد)
-                        </a>
-                    ''', unsafe_allow_html=True)
-                else:
-                    st.error("⚠️ الملف غير موجود")
+                display_pdf(row['file_name'])
                 st.markdown("---")
             else:
                 st.info("📭 لا يوجد ملف مرفق")
