@@ -4,7 +4,6 @@ import os
 import pandas as pd
 from datetime import datetime
 import base64
-import fitz  # PyMuPDF
 
 st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
 st.markdown("""
@@ -38,79 +37,156 @@ def init_db():
     conn.close()
 init_db()
 
-def pdf_to_images(file_path):
-    """تحويل أول صفحة من PDF إلى صورة"""
+def display_pdf_pdfjs(file_name):
+    """عرض PDF باستخدام PDF.js من Mozilla"""
     try:
-        doc = fitz.open(file_path)
-        images = []
-        for page_num in range(min(len(doc), 3)):  # أول 3 صفحات بس
-            page = doc.load_page(page_num)
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-            img_data = pix.tobytes("png")
-            images.append(base64.b64encode(img_data).decode())
-        doc.close()
-        return images
-    except Exception as e:
-        return None
-
-def display_pdf_preview(file_name):
-    """عرض معاينة PDF كصور"""
-    if not file_name:
-        return False
-    
-    file_path = os.path.join(UPLOAD_FOLDER, file_name)
-    if not os.path.exists(file_path):
-        st.error("الملف غير موجود")
-        return False
-    
-    # تحويل PDF لصور
-    images = pdf_to_images(file_path)
-    
-    if images:
-        st.success(f"✅ تم تحميل الملف: {file_name}")
+        if not file_name:
+            return
         
-        # عرض الصفحات
-        for i, img_base64 in enumerate(images):
-            st.markdown(f"**الصفحة {i+1}**")
-            st.markdown(f'<img src="data:image/png;base64,{img_base64}" style="width:100%; border-radius:10px; margin-bottom:20px;">', unsafe_allow_html=True)
+        file_path = os.path.join(UPLOAD_FOLDER, file_name)
+        if not os.path.exists(file_path):
+            st.error(f"⚠️ الملف غير موجود: {file_name}")
+            return
         
-        # أزرار التحكم
+        # قراءة الملف وتحويله لـ base64
         with open(file_path, "rb") as f:
             pdf_bytes = f.read()
         
-        col1, col2 = st.columns(2)
-        with col1:
+        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+        # استخدام PDF.js لعرض PDF
+        pdf_viewer = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                #pdf-container {{
+                    width: 100%;
+                    height: 800px;
+                    border: 2px solid #444;
+                    border-radius: 10px;
+                    background: #f0f0f0;
+                }}
+                .controls {{
+                    margin: 10px 0;
+                    text-align: center;
+                }}
+                button {{
+                    background-color: #ff4b4b;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    margin: 0 5px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                }}
+                button:hover {{
+                    background-color: #ff6b6b;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="controls">
+                <button onclick="prevPage()">⬅️ السابق</button>
+                <span>الصفحة <span id="page_num"></span> / <span id="page_count"></span></span>
+                <button onclick="nextPage()">التالي ➡️</button>
+            </div>
+            <canvas id="pdf-canvas" style="width:100%; border:1px solid #ddd;"></canvas>
+            
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+            <script>
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+                
+                let pdfDoc = null;
+                let pageNum = 1;
+                let pageRendering = false;
+                let pageNumPending = null;
+                let scale = 1.5;
+                let canvas = document.getElementById('pdf-canvas');
+                let ctx = canvas.getContext('2d');
+                
+                function renderPage(num) {{
+                    pageRendering = true;
+                    pdfDoc.getPage(num).then(function(page) {{
+                        let viewport = page.getViewport({{scale: scale}});
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        
+                        let renderContext = {{
+                            canvasContext: ctx,
+                            viewport: viewport
+                        }};
+                        let renderTask = page.render(renderContext);
+                        
+                        renderTask.promise.then(function() {{
+                            pageRendering = false;
+                            if (pageNumPending !== null) {{
+                                renderPage(pageNumPending);
+                                pageNumPending = null;
+                            }}
+                        }});
+                    }});
+                    
+                    document.getElementById('page_num').textContent = num;
+                }}
+                
+                function queueRenderPage(num) {{
+                    if (pageRendering) {{
+                        pageNumPending = num;
+                    }} else {{
+                        renderPage(num);
+                    }}
+                }}
+                
+                function prevPage() {{
+                    if (pageNum <= 1) return;
+                    pageNum--;
+                    queueRenderPage(pageNum);
+                }}
+                
+                function nextPage() {{
+                    if (pageNum >= pdfDoc.numPages) return;
+                    pageNum++;
+                    queueRenderPage(pageNum);
+                }}
+                
+                let pdfData = atob('{base64_pdf}');
+                let loadingTask = pdfjsLib.getDocument({{data: pdfData}});
+                loadingTask.promise.then(function(pdf) {{
+                    pdfDoc = pdf;
+                    document.getElementById('page_count').textContent = pdfDoc.numPages;
+                    renderPage(pageNum);
+                }});
+            </script>
+        </body>
+        </html>
+        '''
+        
+        st.components.v1.html(pdf_viewer, height=900, scrolling=True)
+        
+        # زر تحميل احتياطي
+        st.download_button(
+            label="📥 تحميل PDF (احتياطي)",
+            data=pdf_bytes,
+            file_name=file_name,
+            mime="application/pdf",
+            use_container_width=True
+        )
+        
+    except Exception as e:
+        st.error(f"خطأ في عرض الملف: {e}")
+        # في حالة الخطأ، نعرض رابط التحميل فقط
+        file_path = os.path.join(UPLOAD_FOLDER, file_name)
+        if os.path.exists(file_path):
+            with open(file_path, "rb") as f:
+                pdf_bytes = f.read()
             st.download_button(
-                label="📥 تحميل الملف كامل PDF",
+                label="📥 تحميل PDF",
                 data=pdf_bytes,
                 file_name=file_name,
                 mime="application/pdf",
                 use_container_width=True
             )
-        with col2:
-            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-            st.markdown(f'''
-                <a href="data:application/pdf;base64,{base64_pdf}" target="_blank" 
-                   style="display: inline-block; width: 100%; text-align: center; 
-                          background-color: #ff4b4b; color: white; padding: 8px; 
-                          text-decoration: none; border-radius: 5px;">
-                    📂 فتح الملف كامل في تاب جديد
-                </a>
-            ''', unsafe_allow_html=True)
-        
-        return True
-    else:
-        # لو فشل التحويل، نعرض رابط التحميل فقط
-        with open(file_path, "rb") as f:
-            pdf_bytes = f.read()
-        st.warning("⚠️ لا يمكن عرض معاينة للملف، يمكنك تحميله:")
-        st.download_button(
-            label="📥 تحميل PDF",
-            data=pdf_bytes,
-            file_name=file_name,
-            mime="application/pdf"
-        )
-        return False
 
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 tab1, tab2, tab3 = st.tabs(["➕ تسجيل معاينة جديدة", "📊 سجل المعاينات والإدارة", "👥 إدارة الفنيين"])
@@ -236,10 +312,10 @@ with tab2:
             row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
             conn.close()
            
-            # عرض معاينة PDF
+            # عرض PDF باستخدام PDF.js
             if row['file_name']:
-                st.markdown("### 📄 محتوى التقرير")
-                display_pdf_preview(row['file_name'])
+                st.info(f"📎 الملف المرفق: {row['file_name']}")
+                display_pdf_pdfjs(row['file_name'])
                 st.markdown("---")
             else:
                 st.info("📭 لا يوجد ملف مرفق")
