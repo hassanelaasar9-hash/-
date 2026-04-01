@@ -26,13 +26,24 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
-    conn.cursor().execute('''CREATE TABLE IF NOT EXISTS repairs
+    cursor = conn.cursor()
+    
+    # إنشاء جدول repairs مع phone2
+    cursor.execute('''CREATE TABLE IF NOT EXISTS repairs
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, client_name TEXT, phone TEXT, phone2 TEXT,
                   tech_name TEXT, assistant_name TEXT, visit_date TEXT,
                   governorate TEXT, address TEXT, report TEXT,
                   notes TEXT, file_name TEXT, cost TEXT)''')
-    conn.cursor().execute('''CREATE TABLE IF NOT EXISTS staff
+    
+    # إضافة عمود phone2 إذا كان غير موجود (للتحديث من الإصدار القديم)
+    try:
+        cursor.execute("ALTER TABLE repairs ADD COLUMN phone2 TEXT")
+    except:
+        pass
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS staff
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
+    
     conn.commit()
     conn.close()
 init_db()
@@ -270,7 +281,15 @@ with tab1:
 with tab2:
     st.subheader("📊 سجل المعاينات")
     conn = get_db_connection()
-    df_raw = pd.read_sql_query("SELECT id, client_name as 'العميل', phone as 'التليفون', phone2 as 'تليفون 2', tech_name as 'الفني', cost as 'التكلفة', visit_date as 'التاريخ', governorate as 'المحافظة', address as 'العنوان', file_name FROM repairs ORDER BY visit_date DESC, id DESC", conn)
+    
+    # جلب البيانات مع التحقق من وجود عمود phone2
+    try:
+        df_raw = pd.read_sql_query("SELECT id, client_name as 'العميل', phone as 'التليفون', phone2 as 'تليفون 2', tech_name as 'الفني', cost as 'التكلفة', visit_date as 'التاريخ', governorate as 'المحافظة', address as 'العنوان', file_name FROM repairs ORDER BY visit_date DESC, id DESC", conn)
+    except:
+        # لو العمود مش موجود، نجيب من غير phone2
+        df_raw = pd.read_sql_query("SELECT id, client_name as 'العميل', phone as 'التليفون', tech_name as 'الفني', cost as 'التكلفة', visit_date as 'التاريخ', governorate as 'المحافظة', address as 'العنوان', file_name FROM repairs ORDER BY visit_date DESC, id DESC", conn)
+        df_raw['تليفون 2'] = ""
+    
     conn.close()
     
     if not df_raw.empty:
@@ -282,11 +301,14 @@ with tab2:
         df = df_raw.copy()
        
         def make_wa_link(phone_num):
-            if not phone_num or phone_num == "":
+            if not phone_num or phone_num == "" or pd.isna(phone_num):
                 return "#"
             p = str(phone_num).strip()
-            num = p if p.startswith('2') else '2' + p
-            return f"https://wa.me/{num}"
+            p = ''.join(filter(str.isdigit, p))
+            if p:
+                num = p if p.startswith('2') else '2' + p
+                return f"https://wa.me/{num}"
+            return "#"
        
         df['واتساب'] = df['التليفون'].apply(make_wa_link)
         
@@ -309,8 +331,12 @@ with tab2:
                 st.markdown(f"### 📅 {date.strftime('%Y-%m-%d')}")
                 df_day = df[df['التاريخ'].dt.date == date]
                 
+                # الأعمدة المعروضة
+                display_cols = ['العميل', 'التليفون', 'تليفون 2', 'الفني', 'التكلفة', 'المحافظة', 'العنوان', 'واتساب']
+                cols_to_show = [col for col in display_cols if col in df_day.columns]
+                
                 event = st.dataframe(
-                    df_day.drop(columns=['id', 'file_name', 'التاريخ']),
+                    df_day[cols_to_show],
                     use_container_width=True,
                     on_select="rerun",
                     selection_mode="single-row",
