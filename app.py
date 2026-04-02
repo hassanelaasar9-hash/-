@@ -20,12 +20,6 @@ from reportlab.lib.units import inch, cm
 import io
 from PIL import Image as PILImage
 import qrcode
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
-import requests
 
 # ==================== إعدادات الصفحة ====================
 st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
@@ -34,7 +28,6 @@ st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD_HASH = hashlib.sha256("admin123".encode()).hexdigest()
 
-# قائمة المستخدمين (يمكن تخزينها في قاعدة بيانات لاحقاً)
 USERS = {
     "admin": {"password": ADMIN_PASSWORD_HASH, "role": "admin", "name": "المدير"},
     "supervisor": {"password": hashlib.sha256("super123".encode()).hexdigest(), "role": "supervisor", "name": "مشرف"},
@@ -43,7 +36,6 @@ USERS = {
 }
 
 def check_password():
-    """التحقق من تسجيل الدخول"""
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.user_role = None
@@ -72,7 +64,6 @@ def check_password():
         return False
     return True
 
-# ==================== ستايل الصفحة ====================
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
@@ -82,12 +73,9 @@ st.markdown("""
     .metric-card { background-color: #1a1c23; border-radius: 10px; padding: 15px; text-align: center; border: 1px solid #333; }
     .metric-card h3 { margin: 0; font-size: 14px; color: #888; }
     .metric-card h1 { margin: 10px 0 0 0; font-size: 32px; }
-    .inventory-card { background-color: #1a1c23; border-radius: 10px; padding: 15px; margin: 10px 0; }
-    .low-stock { border-right: 3px solid #ff4b4b; }
     </style>
     """, unsafe_allow_html=True)
 
-# ==================== إعدادات المجلدات ====================
 UPLOAD_FOLDER = "uploaded_reports"
 BACKUP_FOLDER = "backups"
 AUTO_BACKUP_FOLDER = "auto_backups"
@@ -98,7 +86,6 @@ for folder in [UPLOAD_FOLDER, BACKUP_FOLDER, AUTO_BACKUP_FOLDER, INVOICES_FOLDER
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-# ==================== دوال قاعدة البيانات ====================
 def get_db_connection():
     conn = sqlite3.connect('expert2m_v6.db')
     conn.row_factory = sqlite3.Row
@@ -108,7 +95,6 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # جدول المعاينات
     cursor.execute('''CREATE TABLE IF NOT EXISTS repairs
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   client_name TEXT, phone TEXT, phone2 TEXT,
@@ -117,11 +103,9 @@ def init_db():
                   notes TEXT, file_name TEXT, cost TEXT, 
                   invoice_sent INTEGER DEFAULT 0, whatsapp_sent INTEGER DEFAULT 0)''')
     
-    # جدول الفنيين
     cursor.execute('''CREATE TABLE IF NOT EXISTS staff
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
     
-    # جدول العملاء
     cursor.execute('''CREATE TABLE IF NOT EXISTS customers
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   name TEXT, phone TEXT, phone2 TEXT, 
@@ -129,7 +113,6 @@ def init_db():
                   created_date TEXT, total_visits INTEGER DEFAULT 0, 
                   total_cost REAL DEFAULT 0)''')
     
-    # جدول قطع الغيار (المخزون)
     cursor.execute('''CREATE TABLE IF NOT EXISTS inventory
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   part_name TEXT, part_code TEXT UNIQUE,
@@ -137,7 +120,6 @@ def init_db():
                   price REAL DEFAULT 0, unit TEXT DEFAULT 'قطعة',
                   supplier TEXT, last_updated TEXT)''')
     
-    # جدول استخدام قطع الغيار
     cursor.execute('''CREATE TABLE IF NOT EXISTS inventory_usage
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   repair_id INTEGER, part_id INTEGER, quantity INTEGER,
@@ -145,13 +127,11 @@ def init_db():
                   FOREIGN KEY (repair_id) REFERENCES repairs(id),
                   FOREIGN KEY (part_id) REFERENCES inventory(id))''')
     
-    # جدول الإشعارات
     cursor.execute('''CREATE TABLE IF NOT EXISTS notifications
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   title TEXT, message TEXT, type TEXT,
                   created_date TEXT, is_read INTEGER DEFAULT 0)''')
     
-    # إضافة الأعمدة الجديدة إذا لم تكن موجودة
     try:
         cursor.execute("ALTER TABLE repairs ADD COLUMN phone2 TEXT")
     except: pass
@@ -162,14 +142,12 @@ def init_db():
         cursor.execute("ALTER TABLE repairs ADD COLUMN whatsapp_sent INTEGER DEFAULT 0")
     except: pass
     
-    # إضافة الفنيين الافتراضيين
     default_staff = ["محمد احمد", "احمد محمد", "محمود علي", "سيد مصطفى", "خالد حسن"]
     for staff in default_staff:
         try:
             cursor.execute("INSERT INTO staff (name) VALUES (?)", (staff,))
         except: pass
     
-    # إضافة قطع غيار افتراضية
     default_parts = [
         ("محرك كهربائي", "MTR-001", 10, 3, 450, "قطعة", "الشركة العربية"),
         ("طلمبة مياه", "PMP-001", 8, 2, 320, "قطعة", "شركة النيل"),
@@ -188,7 +166,6 @@ def init_db():
     conn.close()
 init_db()
 
-# ==================== دوال النسخ الاحتياطي ====================
 def auto_backup():
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -301,20 +278,16 @@ def export_data_to_excel():
         st.error(f"خطأ في تصدير البيانات: {e}")
         return None
 
-# ==================== دوال العملاء ====================
 def add_or_update_customer(name, phone, phone2, address, governorate):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # البحث عن عميل موجود
     existing = cursor.execute("SELECT id FROM customers WHERE phone = ?", (phone,)).fetchone()
     
     if existing:
-        # تحديث بيانات العميل
         cursor.execute("UPDATE customers SET name=?, phone2=?, address=?, governorate=?, total_visits=total_visits+1 WHERE id=?", 
                       (name, phone2, address, governorate, existing['id']))
     else:
-        # إضافة عميل جديد
         cursor.execute("INSERT INTO customers (name, phone, phone2, address, governorate, created_date, total_visits, total_cost) VALUES (?,?,?,?,?,?,?,?)",
                       (name, phone, phone2, address, governorate, datetime.now().strftime("%Y-%m-%d"), 1, 0))
     
@@ -324,8 +297,12 @@ def add_or_update_customer(name, phone, phone2, address, governorate):
 def update_customer_cost(phone, cost):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE customers SET total_cost = total_cost + ? WHERE phone = ?", (float(cost) if cost else 0, phone))
-    conn.commit()
+    try:
+        cost_val = float(cost) if cost and str(cost).strip() else 0
+        cursor.execute("UPDATE customers SET total_cost = total_cost + ? WHERE phone = ?", (cost_val, phone))
+        conn.commit()
+    except:
+        pass
     conn.close()
 
 def get_customer_history(phone):
@@ -334,7 +311,6 @@ def get_customer_history(phone):
     conn.close()
     return df
 
-# ==================== دوال المخزون ====================
 def add_inventory_item(part_name, part_code, quantity, min_quantity, price, unit, supplier):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -355,7 +331,6 @@ def update_inventory_quantity(part_id, quantity_change):
                   (quantity_change, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), part_id))
     conn.commit()
     
-    # التحقق من المخزون المنخفض
     part = cursor.execute("SELECT part_name, quantity, min_quantity FROM inventory WHERE id = ?", (part_id,)).fetchone()
     if part and part['quantity'] <= part['min_quantity']:
         add_notification(f"تنبيه: مخزون منخفض - {part['part_name']}", 
@@ -376,11 +351,9 @@ def use_inventory_part(repair_id, part_code, quantity, notes=""):
         conn.close()
         return False, f"الكمية غير متوفرة. المتوفر: {part['quantity']}"
     
-    # تسجيل الاستخدام
     cursor.execute("INSERT INTO inventory_usage (repair_id, part_id, quantity, usage_date, notes) VALUES (?,?,?,?,?)",
                   (repair_id, part['id'], quantity, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), notes))
     
-    # تحديث الكمية
     cursor.execute("UPDATE inventory SET quantity = quantity - ? WHERE id = ?", (quantity, part['id']))
     conn.commit()
     conn.close()
@@ -392,7 +365,6 @@ def get_low_stock_items():
     conn.close()
     return df
 
-# ==================== دوال الإشعارات ====================
 def add_notification(title, message, type="info"):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -414,31 +386,25 @@ def mark_notification_read(notif_id):
     conn.commit()
     conn.close()
 
-# ==================== دوال الفواتير ====================
 def generate_invoice_pdf(repair_data):
-    """إنشاء فاتورة PDF للمعاينة"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
     styles = getSampleStyleSheet()
     
-    # ستايل مخصص للعربية
     arabic_style = ParagraphStyle(
         'ArabicStyle',
         parent=styles['Normal'],
         fontName='Helvetica',
         fontSize=12,
-        alignment=1,  # مركز
+        alignment=1,
         spaceAfter=10,
     )
     
     story = []
-    
-    # العنوان
     title = Paragraph("Expert 2M - فاتورة معاينة", arabic_style)
     story.append(title)
     story.append(Spacer(1, 20))
     
-    # بيانات الفاتورة
     data = [
         ["اسم العميل:", repair_data['client_name']],
         ["رقم التليفون:", repair_data['phone']],
@@ -463,7 +429,6 @@ def generate_invoice_pdf(repair_data):
     ]))
     story.append(table)
     
-    # تذييل
     story.append(Spacer(1, 30))
     footer = Paragraph("شكراً لثقتكم في Expert 2M", arabic_style)
     story.append(footer)
@@ -473,17 +438,12 @@ def generate_invoice_pdf(repair_data):
     return buffer
 
 def send_whatsapp_message(phone, message):
-    """إرسال رسالة واتساب (يتطلب Twilio API أو WhatsApp Business API)"""
-    # هذه دالة أساسية - للتشغيل الفعلي تحتاج API من Twilio
-    # للتوضيح فقط - نعيد True كتجربة
     try:
-        # إعداد رابط واتساب
         whatsapp_link = f"https://wa.me/2{phone}?text={message.replace(' ', '%20')}"
         return True, whatsapp_link
     except Exception as e:
         return False, str(e)
 
-# ==================== دالة عرض PDF ====================
 def display_pdf_pdfjs(file_name):
     try:
         if not file_name:
@@ -567,7 +527,6 @@ def display_pdf_pdfjs(file_name):
     except Exception as e:
         st.error(f"خطأ في عرض الملف: {e}")
 
-# ==================== دوال الإحصائيات ====================
 def get_dashboard_stats():
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT * FROM repairs", conn)
@@ -581,18 +540,25 @@ def get_dashboard_stats():
     total = len(df)
     today_count = len(df[df['visit_date'] == today]) if not df.empty else 0
     month_count = len(df[df['visit_date'].str.startswith(current_month)]) if not df.empty else 0
-    total_revenue = df['cost'].astype(float).sum() if not df.empty and 'cost' in df.columns else 0
+    
+    total_revenue = 0
+    if not df.empty and 'cost' in df.columns:
+        try:
+            df['cost_clean'] = df['cost'].astype(str).str.replace('ج.م', '').str.replace('EGP', '').str.replace(' ', '').str.replace(',', '')
+            df['cost_clean'] = pd.to_numeric(df['cost_clean'], errors='coerce').fillna(0)
+            total_revenue = df['cost_clean'].sum()
+        except:
+            total_revenue = 0
+    
     customers_count = len(df_customers)
     low_stock = len(df_inventory[df_inventory['quantity'] <= df_inventory['min_quantity']]) if not df_inventory.empty else 0
     
-    # أكثر فني شغلاً
     if not df.empty and 'tech_name' in df.columns:
         tech_counts = df[df['tech_name'] != '']['tech_name'].value_counts().head(5)
         top_tech = tech_counts.to_dict()
     else:
         top_tech = {}
     
-    # أكثر محافظة
     if not df.empty and 'governorate' in df.columns:
         gov_counts = df[df['governorate'] != '']['governorate'].value_counts().head(5)
         top_gov = gov_counts.to_dict()
@@ -660,7 +626,6 @@ def show_dashboard():
         </div>
         """, unsafe_allow_html=True)
     
-    # رسم بياني للمعاينات اليومية
     conn = get_db_connection()
     df = pd.read_sql_query("SELECT visit_date, cost FROM repairs", conn)
     conn.close()
@@ -679,8 +644,9 @@ def show_dashboard():
     with col7:
         st.markdown("### 👨‍🔧 أكثر الفنيين شغلاً")
         if stats['top_tech']:
+            max_val = max(stats['top_tech'].values()) if stats['top_tech'].values() else 1
             for name, count in list(stats['top_tech'].items())[:5]:
-                st.progress(min(count / max(stats['top_tech'].values()), 1.0))
+                st.progress(min(count / max_val, 1.0))
                 st.write(f"**{name}**: {count} معاينة")
         else:
             st.info("لا توجد بيانات كافية")
@@ -688,20 +654,19 @@ def show_dashboard():
     with col8:
         st.markdown("### 📍 أكثر المحافظات")
         if stats['top_gov']:
+            max_val = max(stats['top_gov'].values()) if stats['top_gov'].values() else 1
             for name, count in list(stats['top_gov'].items())[:5]:
-                st.progress(min(count / max(stats['top_gov'].values()), 1.0))
+                st.progress(min(count / max_val, 1.0))
                 st.write(f"**{name}**: {count} معاينة")
         else:
             st.info("لا توجد بيانات كافية")
     
-    # إشعارات المخزون المنخفض
     low_stock_items = get_low_stock_items()
     if not low_stock_items.empty:
         st.markdown("### ⚠️ تنبيهات المخزون")
         for _, item in low_stock_items.iterrows():
             st.warning(f"**{item['part_name']}** - الكود: {item['part_code']} - المتبقي: {item['quantity']} (الحد الأدنى: {item['min_quantity']})")
 
-# ==================== دالة التحقق من رقم التليفون ====================
 def validate_phone(phone):
     if not phone or phone == "":
         return True, ""
@@ -713,19 +678,15 @@ def validate_phone(phone):
         return False, "رقم التليفون يجب أن يبدأ بـ 01"
     return True, ""
 
-# ==================== قائمة المحافظات ====================
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 
-# ==================== التحقق من تسجيل الدخول ====================
 if not check_password():
     st.stop()
 
-# ==================== الشريط الجانبي ====================
 with st.sidebar:
     st.markdown(f"### 👤 مرحباً {st.session_state.user_name}")
     st.markdown(f"**الدور:** {st.session_state.user_role}")
     
-    # عرض الإشعارات
     unread_notifs = get_unread_notifications()
     if not unread_notifs.empty:
         with st.expander(f"🔔 إشعارات جديدة ({len(unread_notifs)})"):
@@ -739,17 +700,14 @@ with st.sidebar:
         st.session_state.authenticated = False
         st.rerun()
 
-# ==================== التبويبات ====================
 tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 لوحة التحكم", "➕ تسجيل معاينة جديدة", "📊 سجل المعاينات", 
     "👥 إدارة الفنيين", "📦 إدارة المخزون", "👤 إدارة العملاء", "💾 النسخ الاحتياطي"
 ])
 
-# ==================== تبويب لوحة التحكم ====================
 with tab0:
     show_dashboard()
 
-# ==================== تبويب النسخ الاحتياطي (للمدير فقط) ====================
 with tab6:
     if st.session_state.user_role == "admin":
         st.subheader("💾 نظام النسخ الاحتياطي والاستعادة")
@@ -799,7 +757,6 @@ with tab6:
     else:
         st.error("⛔ هذه الصفحة متاحة للمدير فقط")
 
-# ==================== تبويب إدارة الفنيين ====================
 with tab3:
     if st.session_state.user_role in ["admin", "supervisor"]:
         st.subheader("👥 إدارة قاعدة بيانات الفنيين")
@@ -840,13 +797,11 @@ with tab3:
     else:
         st.error("⛔ هذه الصفحة متاحة للمدير والمشرف فقط")
 
-# جلب أسماء الفنيين
 conn = get_db_connection()
 staff_list = pd.read_sql_query("SELECT * FROM staff", conn)
 conn.close()
 staff_names = ["لم يتم التحديد"] + [row['name'] for _, row in staff_list.iterrows()] if not staff_list.empty else ["لم يتم التحديد"]
 
-# ==================== تبويب تسجيل معاينة جديدة ====================
 with tab1:
     st.subheader("📝 إضافة بيانات العميل")
     
@@ -871,7 +826,6 @@ with tab1:
         rep = st.text_area("وصف العطل")
         file = st.file_uploader("ارفع التقرير (PDF)", type=['pdf'])
         
-        # استخدام قطع الغيار
         with st.expander("🔧 استخدام قطع غيار (اختياري)"):
             conn = get_db_connection()
             parts_df = pd.read_sql_query("SELECT id, part_name, part_code, quantity, price FROM inventory WHERE quantity > 0", conn)
@@ -916,11 +870,9 @@ with tab1:
                 conn.commit()
                 conn.close()
                 
-                # إضافة/تحديث العميل
                 add_or_update_customer(name, phone, phone2, addr, gov)
                 update_customer_cost(phone, cost)
                 
-                # تسجيل استخدام قطع الغيار
                 total_parts_cost = 0
                 for part in parts_usage:
                     success, msg = use_inventory_part(repair_id, part["code"], part["qty"], f"استخدام في معاينة {name}")
@@ -933,17 +885,13 @@ with tab1:
                 if total_parts_cost > 0:
                     st.info(f"💰 إجمالي تكلفة قطع الغيار: {total_parts_cost} ج.م")
                 
-                # إضافة إشعار
                 add_notification("معاينة جديدة", f"تم إضافة معاينة جديدة للعميل {name}", "info")
-                
-                # نسخ احتياطي تلقائي
                 auto_backup()
                 
                 st.success("✅ تم الحفظ بنجاح!")
                 st.session_state.form_counter += 1
                 st.rerun()
 
-# ==================== تبويب إدارة المخزون ====================
 with tab4:
     if st.session_state.user_role in ["admin", "supervisor"]:
         st.subheader("📦 إدارة المخزون (قطع الغيار)")
@@ -982,7 +930,6 @@ with tab4:
             if not inventory_df.empty:
                 st.dataframe(inventory_df, use_container_width=True)
                 
-                # تعديل الكميات
                 st.markdown("### ✏️ تعديل الكميات")
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -1027,7 +974,6 @@ with tab4:
     else:
         st.error("⛔ هذه الصفحة متاحة للمدير والمشرف فقط")
 
-# ==================== تبويب إدارة العملاء ====================
 with tab5:
     st.subheader("👤 إدارة العملاء")
     
@@ -1038,7 +984,6 @@ with tab5:
     if not customers_df.empty:
         st.dataframe(customers_df, use_container_width=True)
         
-        # البحث عن عميل
         st.markdown("### 🔍 البحث عن عميل")
         search_phone = st.text_input("ابحث برقم التليفون", max_chars=11)
         
@@ -1056,7 +1001,6 @@ with tab5:
                     st.write(f"**عدد الزيارات:** {customer.iloc[0]['total_visits']}")
                     st.write(f"**إجمالي المصروف:** {customer.iloc[0]['total_cost']} ج.م")
                 
-                # عرض معاينات العميل
                 st.markdown("### 📋 معاينات العميل")
                 repairs_history = get_customer_history(search_phone)
                 if not repairs_history.empty:
@@ -1068,11 +1012,9 @@ with tab5:
     else:
         st.info("لا توجد عملاء مسجلين")
 
-# ==================== تبويب سجل المعاينات ====================
 with tab2:
     st.subheader("📊 سجل المعاينات")
     
-    # تصفية حسب الدور
     if st.session_state.user_role == "tech" and hasattr(st.session_state, 'tech_name'):
         conn = get_db_connection()
         df_raw = pd.read_sql_query("SELECT id, client_name as 'العميل', phone as 'التليفون', phone2 as 'تليفون 2', tech_name as 'الفني', cost as 'التكلفة', visit_date as 'التاريخ', governorate as 'المحافظة', address as 'العنوان', file_name FROM repairs WHERE tech_name = ? ORDER BY visit_date DESC, id DESC", conn, params=(st.session_state.tech_name,))
@@ -1088,7 +1030,6 @@ with tab2:
         conn.close()
     
     if not df_raw.empty:
-        # بحث متقدم
         st.markdown("### 🔍 بحث متقدم")
         search_col1, search_col2, search_col3, search_col4 = st.columns(4)
         
@@ -1157,19 +1098,19 @@ with tab2:
                     row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
                     conn.close()
                     
-                    # عرض الفاتورة
-                    if st.button("📄 إنشاء فاتورة PDF", key=f"invoice_{selected_id}"):
-                        invoice_pdf = generate_invoice_pdf(row)
-                        st.download_button(label="📥 تحميل الفاتورة", data=invoice_pdf, file_name=f"invoice_{selected_id}.pdf", mime="application/pdf")
+                    col_inv, col_wa = st.columns(2)
+                    with col_inv:
+                        if st.button("📄 إنشاء فاتورة PDF", key=f"invoice_{selected_id}"):
+                            invoice_pdf = generate_invoice_pdf(row)
+                            st.download_button(label="📥 تحميل الفاتورة", data=invoice_pdf, file_name=f"invoice_{selected_id}.pdf", mime="application/pdf")
                     
-                    # إرسال واتساب
-                    if st.button("📱 إرسال رابط واتساب", key=f"whatsapp_{selected_id}"):
-                        message = f"مرحباً {row['client_name']}\nتم تسجيل معاينة في Expert 2M\nالتاريخ: {row['visit_date']}\nالتكلفة: {row['cost']} ج.م"
-                        success, result = send_whatsapp_message(row['phone'], message)
-                        if success:
-                            st.markdown(f"[اضغط هنا لفتح واتساب]({result})", unsafe_allow_html=True)
+                    with col_wa:
+                        if st.button("📱 إرسال رابط واتساب", key=f"whatsapp_{selected_id}"):
+                            message = f"مرحباً {row['client_name']}\nتم تسجيل معاينة في Expert 2M\nالتاريخ: {row['visit_date']}\nالتكلفة: {row['cost']} ج.م"
+                            success, result = send_whatsapp_message(row['phone'], message)
+                            if success:
+                                st.markdown(f"[اضغط هنا لفتح واتساب]({result})", unsafe_allow_html=True)
                     
-                    # عرض PDF
                     if row['file_name']:
                         st.info(f"📎 الملف المرفق: {row['file_name']}")
                         display_pdf_pdfjs(row['file_name'])
@@ -1232,7 +1173,6 @@ with tab2:
                                     conn.commit()
                                     conn.close()
                                     
-                                    # تحديث بيانات العميل
                                     add_or_update_customer(u_name, u_phone, u_phone2, u_addr, u_gov)
                                     
                                     st.success("✅ تم التحديث بنجاح!")
