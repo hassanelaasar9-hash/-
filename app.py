@@ -9,14 +9,64 @@ import zipfile
 import hashlib
 import plotly.express as px
 import plotly.graph_objects as go
-from supabase import create_client, Client
+import requests
 import io
+import time
 
 # ==================== إعدادات Supabase ====================
 SUPABASE_URL = "https://ahrhizgfcqmefcdjzskm.supabase.co"
-SUPABASE_KEY = "sb_publishable_YaeiIPPa7mOt2az35yKKkQ_uKMpDACa"  # anon key
+SUPABASE_KEY = "sb_publishable_YaeiIPPa7mOt2az35yKKkQ_uKMpDACa"
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json"
+}
+
+# ==================== دوال Supabase الأساسية ====================
+def supabase_get(table):
+    """جلب البيانات من جدول"""
+    try:
+        response = requests.get(f"{SUPABASE_URL}/rest/v1/{table}?select=*", headers=HEADERS)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            st.error(f"خطأ في جلب البيانات من {table}: {response.status_code}")
+            return []
+    except Exception as e:
+        st.error(f"خطأ في الاتصال بـ Supabase: {e}")
+        return []
+
+def supabase_post(table, data):
+    """إضافة بيانات إلى جدول"""
+    try:
+        response = requests.post(f"{SUPABASE_URL}/rest/v1/{table}", headers=HEADERS, json=data)
+        if response.status_code in [200, 201]:
+            return True
+        else:
+            st.error(f"خطأ في الإضافة إلى {table}: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        st.error(f"خطأ: {e}")
+        return False
+
+def supabase_put(table, id, data):
+    """تحديث بيانات في جدول"""
+    try:
+        response = requests.patch(f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{id}", headers=HEADERS, json=data)
+        return response.status_code in [200, 204]
+    except Exception as e:
+        st.error(f"خطأ في التحديث: {e}")
+        return False
+
+def supabase_delete(table, id):
+    """حذف بيانات من جدول"""
+    try:
+        response = requests.delete(f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{id}", headers=HEADERS)
+        return response.status_code in [200, 204]
+    except Exception as e:
+        st.error(f"خطأ في الحذف: {e}")
+        return False
 
 # ==================== إعدادات الصفحة ====================
 st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
@@ -77,154 +127,171 @@ for folder in [UPLOAD_FOLDER, BACKUP_FOLDER]:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-# ==================== دوال Supabase ====================
+# ==================== دوال البيانات (مع التحويل إلى DataFrame آمن) ====================
 def get_repairs():
-    response = supabase.table("repairs").select("*").order("visit_date", desc=True).execute()
-    return pd.DataFrame(response.data) if response.data else pd.DataFrame()
+    data = supabase_get("repairs")
+    if data and len(data) > 0:
+        return pd.DataFrame(data)
+    return pd.DataFrame()
 
 def add_repair(data):
-    response = supabase.table("repairs").insert(data).execute()
-    return response.data
+    return supabase_post("repairs", data)
 
 def update_repair(repair_id, data):
-    response = supabase.table("repairs").update(data).eq("id", repair_id).execute()
-    return response.data
+    return supabase_put("repairs", repair_id, data)
 
 def delete_repair(repair_id):
-    response = supabase.table("repairs").delete().eq("id", repair_id).execute()
-    return response.data
+    return supabase_delete("repairs", repair_id)
 
 def get_staff():
-    response = supabase.table("staff").select("*").order("name").execute()
-    return pd.DataFrame(response.data) if response.data else pd.DataFrame()
+    data = supabase_get("staff")
+    if data and len(data) > 0:
+        return pd.DataFrame(data)
+    return pd.DataFrame()
 
 def add_staff(name):
-    try:
-        response = supabase.table("staff").insert({"name": name}).execute()
-        return True, "تم إضافة الفني بنجاح"
-    except Exception as e:
-        return False, str(e)
+    return supabase_post("staff", {"name": name})
 
 def delete_staff(staff_id):
-    response = supabase.table("staff").delete().eq("id", staff_id).execute()
-    return response.data
+    return supabase_delete("staff", staff_id)
 
 def get_customers():
-    response = supabase.table("customers").select("*").order("total_visits", desc=True).execute()
-    return pd.DataFrame(response.data) if response.data else pd.DataFrame()
+    data = supabase_get("customers")
+    if data and len(data) > 0:
+        return pd.DataFrame(data)
+    return pd.DataFrame()
 
 def add_or_update_customer(name, phone, phone2, address, governorate):
-    existing = supabase.table("customers").select("*").eq("phone", phone).execute()
-    
-    if existing.data:
-        customer = existing.data[0]
-        supabase.table("customers").update({
-            "name": name, "phone2": phone2, "address": address, 
-            "governorate": governorate, "total_visits": customer['total_visits'] + 1
-        }).eq("id", customer['id']).execute()
+    customers = get_customers()
+    if not customers.empty and 'phone' in customers.columns:
+        existing = customers[customers['phone'] == phone]
+        if not existing.empty:
+            customer = existing.iloc[0]
+            supabase_put("customers", customer['id'], {
+                "name": name, "phone2": phone2, "address": address,
+                "governorate": governorate, "total_visits": customer.get('total_visits', 0) + 1
+            })
+        else:
+            supabase_post("customers", {
+                "name": name, "phone": phone, "phone2": phone2,
+                "address": address, "governorate": governorate,
+                "created_date": datetime.now().strftime("%Y-%m-%d"),
+                "total_visits": 1, "total_cost": 0
+            })
     else:
-        supabase.table("customers").insert({
+        supabase_post("customers", {
             "name": name, "phone": phone, "phone2": phone2,
             "address": address, "governorate": governorate,
             "created_date": datetime.now().strftime("%Y-%m-%d"),
             "total_visits": 1, "total_cost": 0
-        }).execute()
+        })
 
 def update_customer_cost(phone, cost):
     try:
         cost_val = float(cost) if cost else 0
-        existing = supabase.table("customers").select("*").eq("phone", phone).execute()
-        if existing.data:
-            customer = existing.data[0]
-            supabase.table("customers").update({
-                "total_cost": customer['total_cost'] + cost_val
-            }).eq("id", customer['id']).execute()
-    except:
-        pass
+        customers = get_customers()
+        if not customers.empty and 'phone' in customers.columns:
+            existing = customers[customers['phone'] == phone]
+            if not existing.empty:
+                customer = existing.iloc[0]
+                current_cost = customer.get('total_cost', 0)
+                supabase_put("customers", customer['id'], {
+                    "total_cost": current_cost + cost_val
+                })
+    except Exception as e:
+        print(f"خطأ في تحديث تكلفة العميل: {e}")
 
 def get_customer_history(phone):
-    response = supabase.table("repairs").select("*").eq("phone", phone).order("visit_date", desc=True).execute()
-    return pd.DataFrame(response.data) if response.data else pd.DataFrame()
+    repairs = get_repairs()
+    if not repairs.empty and 'phone' in repairs.columns:
+        return repairs[repairs['phone'] == phone].sort_values('visit_date', ascending=False)
+    return pd.DataFrame()
 
 def get_inventory():
-    response = supabase.table("inventory").select("*").order("part_name").execute()
-    return pd.DataFrame(response.data) if response.data else pd.DataFrame()
+    data = supabase_get("inventory")
+    if data and len(data) > 0:
+        return pd.DataFrame(data)
+    return pd.DataFrame()
 
 def add_inventory_item(part_name, part_code, quantity, min_quantity, price, unit, supplier):
-    try:
-        supabase.table("inventory").insert({
-            "part_name": part_name, "part_code": part_code,
-            "quantity": quantity, "min_quantity": min_quantity,
-            "price": price, "unit": unit, "supplier": supplier,
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }).execute()
-        return True, "تم إضافة القطعة بنجاح"
-    except Exception as e:
-        return False, str(e)
+    return supabase_post("inventory", {
+        "part_name": part_name, "part_code": part_code,
+        "quantity": quantity, "min_quantity": min_quantity,
+        "price": price, "unit": unit, "supplier": supplier,
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
 
 def update_inventory_quantity(part_id, quantity_change):
     inventory = get_inventory()
-    part = inventory[inventory['id'] == part_id]
-    if not part.empty:
-        new_quantity = part.iloc[0]['quantity'] + quantity_change
-        supabase.table("inventory").update({
-            "quantity": new_quantity,
-            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }).eq("id", part_id).execute()
-        
-        if new_quantity <= part.iloc[0]['min_quantity']:
-            add_notification(f"تنبيه: مخزون منخفض - {part.iloc[0]['part_name']}",
-                           f"الكمية المتبقية: {new_quantity}", "warning")
+    if not inventory.empty:
+        part = inventory[inventory['id'] == part_id]
+        if not part.empty:
+            new_quantity = part.iloc[0]['quantity'] + quantity_change
+            supabase_put("inventory", part_id, {
+                "quantity": new_quantity,
+                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            
+            if new_quantity <= part.iloc[0]['min_quantity']:
+                add_notification(f"تنبيه: مخزون منخفض - {part.iloc[0]['part_name']}",
+                               f"الكمية المتبقية: {new_quantity}", "warning")
 
 def delete_inventory_item(part_id):
-    supabase.table("inventory").delete().eq("id", part_id).execute()
+    return supabase_delete("inventory", part_id)
 
 def use_inventory_part(repair_id, part_code, quantity, notes=""):
     inventory = get_inventory()
-    part = inventory[inventory['part_code'] == part_code]
+    if inventory.empty:
+        return False, "لا توجد قطع غيار"
     
+    part = inventory[inventory['part_code'] == part_code]
     if part.empty:
         return False, "القطعة غير موجودة"
     
     if part.iloc[0]['quantity'] < quantity:
         return False, f"الكمية غير متوفرة. المتوفر: {part.iloc[0]['quantity']}"
     
-    supabase.table("inventory_usage").insert({
+    supabase_post("inventory_usage", {
         "repair_id": repair_id, "part_id": part.iloc[0]['id'],
         "quantity": quantity, "usage_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "notes": notes
-    }).execute()
+    })
     
     new_quantity = part.iloc[0]['quantity'] - quantity
-    supabase.table("inventory").update({
+    supabase_put("inventory", part.iloc[0]['id'], {
         "quantity": new_quantity,
         "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }).eq("id", part.iloc[0]['id']).execute()
+    })
     
     return True, "تم تسجيل الاستخدام بنجاح"
 
 def get_low_stock_items():
     inventory = get_inventory()
-    if not inventory.empty:
+    if not inventory.empty and 'quantity' in inventory.columns and 'min_quantity' in inventory.columns:
         return inventory[inventory['quantity'] <= inventory['min_quantity']]
     return pd.DataFrame()
 
 def get_notifications():
-    response = supabase.table("notifications").select("*").eq("is_read", 0).order("created_date", desc=True).execute()
-    return pd.DataFrame(response.data) if response.data else pd.DataFrame()
+    data = supabase_get("notifications")
+    if data and len(data) > 0:
+        df = pd.DataFrame(data)
+        if 'is_read' in df.columns:
+            return df[df['is_read'] == 0].sort_values('created_date', ascending=False)
+        return df
+    return pd.DataFrame()
 
 def add_notification(title, message, type="info"):
-    supabase.table("notifications").insert({
+    supabase_post("notifications", {
         "title": title, "message": message, "type": type,
         "created_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "is_read": 0
-    }).execute()
+    })
 
 def mark_notification_read(notif_id):
-    supabase.table("notifications").update({"is_read": 1}).eq("id", notif_id).execute()
+    supabase_put("notifications", notif_id, {"is_read": 1})
 
 def delete_notification(notif_id):
-    supabase.table("notifications").delete().eq("id", notif_id).execute()
+    supabase_delete("notifications", notif_id)
 
 # ==================== دالة عرض PDF ====================
 def display_pdf_pdfjs(file_name):
@@ -320,8 +387,12 @@ def get_dashboard_stats():
     current_month = datetime.now().strftime("%Y-%m")
     
     total = len(repairs_df)
-    today_count = len(repairs_df[repairs_df['visit_date'] == today]) if not repairs_df.empty else 0
-    month_count = len(repairs_df[repairs_df['visit_date'].str.startswith(current_month)]) if not repairs_df.empty else 0
+    today_count = 0
+    month_count = 0
+    
+    if not repairs_df.empty and 'visit_date' in repairs_df.columns:
+        today_count = len(repairs_df[repairs_df['visit_date'] == today])
+        month_count = len(repairs_df[repairs_df['visit_date'].str.startswith(current_month)])
     
     total_revenue = 0
     if not repairs_df.empty and 'cost' in repairs_df.columns:
@@ -333,19 +404,17 @@ def get_dashboard_stats():
             total_revenue = 0
     
     customers_count = len(customers_df)
-    low_stock = len(inventory_df[inventory_df['quantity'] <= inventory_df['min_quantity']]) if not inventory_df.empty else 0
+    low_stock = len(get_low_stock_items())
     
+    top_tech = {}
     if not repairs_df.empty and 'tech_name' in repairs_df.columns:
         tech_counts = repairs_df[repairs_df['tech_name'] != '']['tech_name'].value_counts().head(5)
         top_tech = tech_counts.to_dict()
-    else:
-        top_tech = {}
     
+    top_gov = {}
     if not repairs_df.empty and 'governorate' in repairs_df.columns:
         gov_counts = repairs_df[repairs_df['governorate'] != '']['governorate'].value_counts().head(5)
         top_gov = gov_counts.to_dict()
-    else:
-        top_gov = {}
     
     return {
         'total': total, 'today': today_count, 'month': month_count,
@@ -409,7 +478,7 @@ def show_dashboard():
         """, unsafe_allow_html=True)
     
     repairs_df = get_repairs()
-    if not repairs_df.empty:
+    if not repairs_df.empty and 'visit_date' in repairs_df.columns:
         repairs_df['visit_date'] = pd.to_datetime(repairs_df['visit_date'])
         daily_counts = repairs_df.groupby(repairs_df['visit_date'].dt.date).size().reset_index(name='count')
         daily_counts.columns = ['التاريخ', 'عدد المعاينات']
@@ -470,7 +539,6 @@ with st.sidebar:
     st.markdown(f"### 👤 مرحباً {st.session_state.user_name}")
     st.markdown(f"**الدور:** {st.session_state.user_role}")
     
-    # عرض الإشعارات
     unread_notifs = get_notifications()
     if not unread_notifs.empty:
         with st.expander(f"🔔 إشعارات جديدة ({len(unread_notifs)})"):
@@ -488,7 +556,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 💾 حفظ البيانات")
-    st.info("البيانات محفوظة في Supabase (سحابياً)")
+    st.success("✅ البيانات محفوظة في Supabase (سحابياً)")
     
     if st.button("🚪 تسجيل خروج", use_container_width=True):
         st.session_state.authenticated = False
@@ -515,12 +583,11 @@ with tab3:
             new_staff = st.text_input("اسم الفني الجديد")
             if st.form_submit_button("➕ إضافة فني"):
                 if new_staff:
-                    success, msg = add_staff(new_staff)
-                    if success:
-                        st.success(msg)
+                    if add_staff(new_staff):
+                        st.success("تم إضافة الفني بنجاح")
                         st.rerun()
                     else:
-                        st.error(msg)
+                        st.error("حدث خطأ")
                 else:
                     st.warning("برجاء كتابة اسم")
     
@@ -537,7 +604,7 @@ with tab3:
         else:
             st.info("لا يوجد فنيين مسجلين")
 
-# جلب أسماء الفنيين للقوائم المنسدلة
+# جلب أسماء الفنيين
 staff_df = get_staff()
 staff_names = ["لم يتم التحديد"] + staff_df['name'].tolist() if not staff_df.empty else ["لم يتم التحديد"]
 
@@ -566,17 +633,13 @@ with tab1:
         rep = st.text_area("وصف العطل")
         file = st.file_uploader("ارفع التقرير (PDF)", type=['pdf'])
         
-        # اختيار الفني
         tech_name = st.selectbox("اسم الفني", staff_names)
         
-        # استخدام قطع الغيار
         with st.expander("🔧 استخدام قطع غيار (اختياري)"):
             parts_df = get_inventory()
-            
             if not parts_df.empty:
                 parts_list = [f"{row['part_name']} ({row['part_code']}) - متوفر: {row['quantity']}" for _, row in parts_df.iterrows()]
                 selected_parts = st.multiselect("اختر قطع الغيار المستخدمة", parts_list)
-                
                 parts_usage = []
                 for part_str in selected_parts:
                     part_code = part_str.split("(")[1].split(")")[0]
@@ -604,7 +667,6 @@ with tab1:
                     with open(file_path, "wb") as f:
                         f.write(file.getbuffer())
                 
-                # إضافة المعاينة إلى Supabase
                 repair_data = {
                     "client_name": name, "phone": phone, "phone2": phone2,
                     "visit_date": str(date_v), "governorate": gov, "address": addr,
@@ -615,28 +677,27 @@ with tab1:
                 result = add_repair(repair_data)
                 
                 if result:
-                    repair_id = result[0]['id'] if result else None
-                    
-                    # إضافة/تحديث العميل
                     add_or_update_customer(name, phone, phone2, addr, gov)
                     update_customer_cost(phone, cost)
                     
-                    # تسجيل استخدام قطع الغيار
-                    total_parts_cost = 0
-                    for part in parts_usage:
-                        success, msg = use_inventory_part(repair_id, part["code"], part["qty"], f"استخدام في معاينة {name}")
-                        if success:
-                            total_parts_cost += part["qty"] * part["price"]
-                            st.success(f"✅ {msg}")
-                        else:
-                            st.warning(f"⚠️ {msg}")
+                    # الحصول على ID المعاينة (آخر إضافة)
+                    time.sleep(0.5)
+                    repairs_df = get_repairs()
+                    if not repairs_df.empty:
+                        repair_id = repairs_df.iloc[-1]['id']
+                        total_parts_cost = 0
+                        for part in parts_usage:
+                            success, msg = use_inventory_part(repair_id, part["code"], part["qty"], f"استخدام في معاينة {name}")
+                            if success:
+                                total_parts_cost += part["qty"] * part["price"]
+                                st.success(f"✅ {msg}")
+                            else:
+                                st.warning(f"⚠️ {msg}")
+                        
+                        if total_parts_cost > 0:
+                            st.info(f"💰 إجمالي تكلفة قطع الغيار: {total_parts_cost} ج.م")
                     
-                    if total_parts_cost > 0:
-                        st.info(f"💰 إجمالي تكلفة قطع الغيار: {total_parts_cost} ج.م")
-                    
-                    # إضافة إشعار
                     add_notification("معاينة جديدة", f"تم إضافة معاينة جديدة للعميل {name}", "info")
-                    
                     st.success("✅ تم الحفظ بنجاح!")
                     st.session_state.form_counter += 1
                     st.rerun()
@@ -664,18 +725,16 @@ with tab4:
             
             if st.form_submit_button("➕ إضافة قطعة"):
                 if part_name and part_code:
-                    success, msg = add_inventory_item(part_name, part_code, quantity, min_quantity, price, unit, supplier)
-                    if success:
-                        st.success(msg)
+                    if add_inventory_item(part_name, part_code, quantity, min_quantity, price, unit, supplier):
+                        st.success("تم إضافة القطعة بنجاح")
                         st.rerun()
                     else:
-                        st.error(msg)
+                        st.error("حدث خطأ أو الكود موجود بالفعل")
                 else:
                     st.warning("اسم القطعة والكود مطلوبان")
     
     with tabs_inv[1]:
         inventory_df = get_inventory()
-        
         if not inventory_df.empty:
             st.dataframe(inventory_df, use_container_width=True)
             
@@ -724,7 +783,7 @@ with tab5:
         st.markdown("### 🔍 البحث عن عميل")
         search_phone = st.text_input("ابحث برقم التليفون", max_chars=11)
         
-        if search_phone:
+        if search_phone and 'phone' in customers_df.columns:
             customer = customers_df[customers_df['phone'] == search_phone]
             if not customer.empty:
                 st.markdown(f"### معلومات العميل: {customer.iloc[0]['name']}")
@@ -756,7 +815,6 @@ with tab2:
     repairs_df = get_repairs()
     
     if not repairs_df.empty:
-        # بحث متقدم
         st.markdown("### 🔍 بحث متقدم")
         search_col1, search_col2, search_col3, search_col4 = st.columns(4)
         
@@ -771,26 +829,25 @@ with tab2:
         
         df = repairs_df.copy()
         
-        if search_query:
+        if search_query and 'client_name' in df.columns:
             df = df[df['client_name'].str.contains(search_query, na=False, case=False)]
-        if search_phone:
+        if search_phone and 'phone' in df.columns:
             df = df[df['phone'].str.contains(search_phone, na=False)]
-        if start_date:
+        if start_date and 'visit_date' in df.columns:
             df = df[pd.to_datetime(df['visit_date']) >= pd.to_datetime(start_date)]
-        if end_date:
+        if end_date and 'visit_date' in df.columns:
             df = df[pd.to_datetime(df['visit_date']) <= pd.to_datetime(end_date)]
         
-        # إعادة تسمية الأعمدة للعرض
         if not df.empty:
             df_display = df.copy()
-            df_display['العميل'] = df_display['client_name']
-            df_display['التليفون'] = df_display['phone']
-            df_display['تليفون 2'] = df_display['phone2'].fillna('')
-            df_display['الفني'] = df_display['tech_name']
-            df_display['التكلفة'] = df_display['cost']
-            df_display['التاريخ'] = df_display['visit_date']
-            df_display['المحافظة'] = df_display['governorate']
-            df_display['العنوان'] = df_display['address']
+            df_display['العميل'] = df_display['client_name'] if 'client_name' in df_display else ""
+            df_display['التليفون'] = df_display['phone'] if 'phone' in df_display else ""
+            df_display['تليفون 2'] = df_display['phone2'].fillna('') if 'phone2' in df_display else ""
+            df_display['الفني'] = df_display['tech_name'] if 'tech_name' in df_display else ""
+            df_display['التكلفة'] = df_display['cost'] if 'cost' in df_display else ""
+            df_display['التاريخ'] = df_display['visit_date'] if 'visit_date' in df_display else ""
+            df_display['المحافظة'] = df_display['governorate'] if 'governorate' in df_display else ""
+            df_display['العنوان'] = df_display['address'] if 'address' in df_display else ""
             
             def make_wa_link(phone_num):
                 if not phone_num or phone_num == "" or pd.isna(phone_num):
@@ -802,7 +859,7 @@ with tab2:
                     return f"https://wa.me/{num}"
                 return "#"
             
-            df_display['واتساب'] = df_display['phone'].apply(make_wa_link)
+            df_display['واتساب'] = df_display['phone'].apply(make_wa_link) if 'phone' in df_display else "#"
             
             st.write(f"🔎 تم العثور على {len(df_display)} سجل")
             
@@ -834,7 +891,7 @@ with tab2:
                     
                     row = df[df['id'] == selected_id].iloc[0]
                     
-                    if row['file_name']:
+                    if row.get('file_name'):
                         st.info(f"📎 الملف المرفق: {row['file_name']}")
                         display_pdf_pdfjs(row['file_name'])
                         st.markdown("---")
@@ -845,19 +902,20 @@ with tab2:
                     with st.form(f"edit_form_{selected_id}"):
                         col_l, col_r = st.columns(2)
                         with col_l:
-                            u_name = st.text_input("اسم العميل", row['client_name'])
-                            u_phone = st.text_input("التليفون الأول", row['phone'], max_chars=11)
-                            u_phone2 = st.text_input("التليفون الثاني", row['phone2'] if row['phone2'] else "", max_chars=11)
-                            current_tech_idx = staff_names.index(row['tech_name']) if row['tech_name'] in staff_names else 0
+                            u_name = st.text_input("اسم العميل", row.get('client_name', ''))
+                            u_phone = st.text_input("التليفون الأول", row.get('phone', ''), max_chars=11)
+                            u_phone2 = st.text_input("التليفون الثاني", row.get('phone2', ''), max_chars=11)
+                            current_tech_idx = staff_names.index(row.get('tech_name', '')) if row.get('tech_name') in staff_names else 0
                             u_tech = st.selectbox("اسم الفني", staff_names, index=current_tech_idx)
                         with col_r:
-                            u_cost = st.text_input("التكلفة", row['cost'])
-                            u_gov = st.selectbox("المحافظة", ALL_GOVS, index=ALL_GOVS.index(row['governorate']))
-                            u_addr = st.text_input("العنوان", row['address'])
-                            u_date = st.date_input("تاريخ المعاينة", datetime.strptime(row['visit_date'], '%Y-%m-%d'))
+                            u_cost = st.text_input("التكلفة", row.get('cost', ''))
+                            current_gov_idx = ALL_GOVS.index(row.get('governorate', 'القاهرة')) if row.get('governorate') in ALL_GOVS else 0
+                            u_gov = st.selectbox("المحافظة", ALL_GOVS, index=current_gov_idx)
+                            u_addr = st.text_input("العنوان", row.get('address', ''))
+                            u_date = st.date_input("تاريخ المعاينة", datetime.strptime(row['visit_date'], '%Y-%m-%d') if row.get('visit_date') else datetime.now())
                         
-                        u_notes = st.text_area("ملاحظات إضافية", row['notes'])
-                        st.write(f"**وصف العطل المسجل:** {row['report']}")
+                        u_notes = st.text_area("ملاحظات إضافية", row.get('notes', ''))
+                        st.write(f"**وصف العطل المسجل:** {row.get('report', '')}")
                         st.markdown("---")
                         new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
                         
@@ -873,14 +931,14 @@ with tab2:
                                 elif not valid2:
                                     st.error(msg2)
                                 else:
-                                    file_name = row['file_name']
+                                    file_name = row.get('file_name', '')
                                     if new_pdf:
                                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                                         file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
                                         file_path = os.path.join(UPLOAD_FOLDER, file_name)
                                         with open(file_path, "wb") as f:
                                             f.write(new_pdf.getbuffer())
-                                        if row['file_name']:
+                                        if row.get('file_name'):
                                             old_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
                                             if os.path.exists(old_path):
                                                 try:
@@ -904,7 +962,7 @@ with tab2:
                         with col_del:
                             if st.session_state.user_role == "admin":
                                 if st.form_submit_button("🗑️ مسح المعاينة", type="secondary"):
-                                    if row['file_name']:
+                                    if row.get('file_name'):
                                         file_to_delete = os.path.join(UPLOAD_FOLDER, row['file_name'])
                                         if os.path.exists(file_to_delete):
                                             try:
@@ -912,7 +970,7 @@ with tab2:
                                             except:
                                                 pass
                                     delete_repair(selected_id)
-                                    add_notification("تم مسح معاينة", f"تم مسح معاينة العميل {row['client_name']}", "warning")
+                                    add_notification("تم مسح معاينة", f"تم مسح معاينة العميل {row.get('client_name', '')}", "warning")
                                     st.success("🗑️ تم المسح بنجاح!")
                                     st.rerun()
                     
