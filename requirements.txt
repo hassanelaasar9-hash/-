@@ -1,8 +1,0 @@
-streamlit
-pandas
-plotly
-openpyxl
-reportlab
-pillow
-qrcode
-supabase
