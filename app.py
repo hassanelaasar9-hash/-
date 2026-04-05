@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 import requests
 import io
 import time
+import math
 
 # ==================== إعدادات Supabase ====================
 SUPABASE_URL = "https://ahrhizgfcqmefcdjzskm.supabase.co"
@@ -26,7 +27,7 @@ HEADERS = {
 # ==================== إعدادات الصفحة ====================
 st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
 
-# ==================== ستايل مخصص (ألوان مريحة + اتجاه RTL) ====================
+# ==================== ستايل مخصص ====================
 st.markdown("""
     <style>
     /* اتجاه الصفحة بالكامل من اليمين لليسار */
@@ -34,6 +35,12 @@ st.markdown("""
         background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
         color: #ffffff;
         direction: rtl;
+    }
+    
+    /* اتجاه كل العناصر من اليمين */
+    div, p, h1, h2, h3, h4, h5, h6, span, label, .stMarkdown {
+        direction: rtl;
+        text-align: right;
     }
     
     /* تنسيق الفورمات */
@@ -49,6 +56,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         justify-content: flex-start;
+        flex-wrap: wrap;
     }
     
     .stTabs [data-baseweb="tab"] {
@@ -110,7 +118,6 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0, 180, 216, 0.3);
     }
     
-    /* الأزرار الثانوية */
     .stButton > button[data-baseweb="button-secondary"] {
         background: linear-gradient(135deg, #e63946, #c1121f);
     }
@@ -124,7 +131,7 @@ st.markdown("""
         direction: rtl;
     }
     
-    /* الجدول */
+    /* الجدول - اتجاه من اليمين لليسار */
     .stDataFrame {
         direction: rtl;
     }
@@ -132,6 +139,10 @@ st.markdown("""
     .stDataFrame table {
         direction: rtl;
         text-align: right;
+    }
+    
+    .stDataFrame th, .stDataFrame td {
+        text-align: right !important;
     }
     
     /* الرسوم البيانية */
@@ -159,6 +170,15 @@ st.markdown("""
     .status-new { background: #00b4d8; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
     .status-completed { background: #2ecc71; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
     .status-delayed { background: #e67e22; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
+    
+    /* تنسيق أزرار التنقل بين الصفحات */
+    .pagination {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 20px;
+        direction: ltr;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -241,9 +261,11 @@ def get_repairs():
     data = supabase_get("repairs")
     if data and len(data) > 0:
         df = pd.DataFrame(data)
-        # إضافة عمود الحالة إذا مش موجود
         if 'status' not in df.columns:
             df['status'] = 'جديدة'
+        # ترتيب حسب التاريخ تنازلياً
+        if 'visit_date' in df.columns:
+            df = df.sort_values('visit_date', ascending=False)
         return df
     return pd.DataFrame()
 
@@ -369,7 +391,6 @@ def delete_notification(notif_id):
     supabase_delete("notifications", notif_id)
 
 def delete_all_notifications():
-    """مسح كل الإشعارات"""
     notifs = get_notifications()
     if not notifs.empty:
         for _, notif in notifs.iterrows():
@@ -398,7 +419,7 @@ def display_pdf_pdfjs(file_name):
         <html>
         <head>
             <style>
-                .controls {{ margin: 10px 0; text-align: center; }}
+                .controls {{ margin: 10px 0; text-align: center; direction: ltr; }}
                 button {{ background-color: #00b4d8; color: white; border: none; padding: 8px 16px; margin: 0 5px; border-radius: 8px; cursor: pointer; }}
                 button:hover {{ background-color: #0077b6; }}
                 canvas {{ border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }}
@@ -490,7 +511,6 @@ def get_dashboard_stats():
     customers_count = len(customers_df)
     low_stock = len(get_low_stock_items())
     
-    # إحصائيات الحالات
     status_counts = {}
     if not repairs_df.empty and 'status' in repairs_df.columns:
         status_counts = repairs_df['status'].value_counts().to_dict()
@@ -506,7 +526,6 @@ def show_dashboard():
     
     st.markdown("## 📊 لوحة التحكم والإحصائيات")
     
-    # الصف الأول من البطاقات
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
@@ -557,7 +576,6 @@ def show_dashboard():
         </div>
         """, unsafe_allow_html=True)
     
-    # الصف الثاني - حالات المعاينات
     if stats['status_counts']:
         st.markdown("### 📊 توزيع حالات المعاينات")
         col_s1, col_s2, col_s3 = st.columns(3)
@@ -589,7 +607,6 @@ def show_dashboard():
             </div>
             """, unsafe_allow_html=True)
     
-    # رسم بياني
     repairs_df = get_repairs()
     if not repairs_df.empty and 'visit_date' in repairs_df.columns:
         repairs_df['visit_date'] = pd.to_datetime(repairs_df['visit_date'])
@@ -634,12 +651,10 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # الإشعارات مع زر مسح الكل
     unread_notifs = get_notifications()
     if not unread_notifs.empty:
         st.markdown("### 🔔 الإشعارات")
         
-        # زر مسح كل الإشعارات
         col_n1, col_n2 = st.columns([3, 1])
         with col_n2:
             if st.button("🗑️ مسح الكل", use_container_width=True):
@@ -798,6 +813,25 @@ with tab1:
                 else:
                     st.error("❌ حدث خطأ في حفظ البيانات")
 
+# ==================== دوال مساعدة لصفحات المعاينات ====================
+def paginate_dataframe(df, page_num, rows_per_page=10):
+    """تقسيم DataFrame إلى صفحات"""
+    total_rows = len(df)
+    total_pages = math.ceil(total_rows / rows_per_page)
+    
+    if total_pages == 0:
+        total_pages = 1
+    
+    # التأكد من أن رقم الصفحة ضمن النطاق
+    page_num = max(1, min(page_num, total_pages))
+    
+    start_idx = (page_num - 1) * rows_per_page
+    end_idx = min(start_idx + rows_per_page, total_rows)
+    
+    page_df = df.iloc[start_idx:end_idx]
+    
+    return page_df, total_pages
+
 # ==================== تبويب سجل المعاينات ====================
 with tab2:
     st.subheader("📋 سجل المعاينات")
@@ -807,7 +841,6 @@ with tab2:
     if not repairs_df.empty:
         st.markdown("### 🔍 بحث وتصفية متقدم")
         
-        # صف الفلترة الأول
         col_f1, col_f2, col_f3 = st.columns(3)
         
         with col_f1:
@@ -817,10 +850,8 @@ with tab2:
             search_phone = st.text_input("📞 بحث برقم التليفون", placeholder="اكتب رقم التليفون...")
         
         with col_f3:
-            # فلترة باسم الفني
             selected_tech = st.selectbox("👨‍🔧 فلترة باسم الفني", staff_names)
         
-        # صف الفلترة الثاني
         col_f4, col_f5, col_f6 = st.columns(3)
         
         with col_f4:
@@ -849,6 +880,11 @@ with tab2:
             df = df[df['status'] == selected_status]
         
         if not df.empty:
+            # إضافة عمود التاريخ للفصل
+            if 'visit_date' in df.columns:
+                df['visit_date_obj'] = pd.to_datetime(df['visit_date'])
+                df['display_date'] = df['visit_date_obj'].dt.date
+            
             # تحضير البيانات للعرض
             df_display = df.copy()
             df_display['العميل'] = df_display['client_name'] if 'client_name' in df_display else ""
@@ -871,120 +907,184 @@ with tab2:
                     return f"https://wa.me/{num}"
                 return "#"
             
-            df_display['واتساب'] = df_display['phone'].apply(make_wa_link) if 'phone' in df_display else "#"
+            # رابط واتساب بلوجو أخضر
+            df_display['واتساب'] = df_display['phone'].apply(lambda x: f"https://wa.me/{''.join(filter(str.isdigit, str(x)))}" if x and str(x).strip() else "#")
             
-            st.write(f"🔎 تم العثور على {len(df_display)} سجل")
+            # الحصول على التواريخ الفريدة للفصل
+            unique_dates = sorted(df_display['display_date'].unique(), reverse=True) if 'display_date' in df_display.columns else []
             
-            # عرض الجدول
-            display_cols = ['العميل', 'التليفون', 'تليفون 2', 'الفني', 'التكلفة', 'المحافظة', 'العنوان', 'الحالة', 'واتساب']
-            cols_to_show = [col for col in display_cols if col in df_display.columns]
+            # إعداد متغيرات التصفح
+            if 'current_page' not in st.session_state:
+                st.session_state.current_page = 1
             
-            event = st.dataframe(
-                df_display[cols_to_show],
-                use_container_width=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                column_config={"واتساب": st.column_config.LinkColumn("واتساب", display_text="📱 مراسلة")}
-            )
+            total_dates = len(unique_dates)
+            dates_per_page = 5
             
-            selected_rows = event.selection.rows
-            if selected_rows:
-                selected_index = selected_rows[0]
-                selected_id = df_display.iloc[selected_index]['id']
+            total_pages = math.ceil(total_dates / dates_per_page)
+            
+            if total_pages > 0:
+                # حساب الصفحة الحالية
+                if st.session_state.current_page < 1:
+                    st.session_state.current_page = 1
+                if st.session_state.current_page > total_pages:
+                    st.session_state.current_page = total_pages
                 
-                st.divider()
-                st.subheader(f"🛠️ إجراءات التعديل: {df_display.iloc[selected_index]['العميل']}")
+                start_date_idx = (st.session_state.current_page - 1) * dates_per_page
+                end_date_idx = min(start_date_idx + dates_per_page, total_dates)
+                current_dates = unique_dates[start_date_idx:end_date_idx]
                 
-                row = df[df['id'] == selected_id].iloc[0]
+                st.write(f"🔎 تم العثور على {len(df_display)} سجل")
                 
-                if row.get('file_name'):
-                    st.info(f"📎 الملف المرفق: {row['file_name']}")
-                    display_pdf_pdfjs(row['file_name'])
-                    st.markdown("---")
-                else:
-                    st.info("📭 لا يوجد ملف مرفق")
-                    st.markdown("---")
-                
-                with st.form(f"edit_form_{selected_id}"):
-                    col_l, col_r = st.columns(2)
-                    with col_l:
-                        u_name = st.text_input("اسم العميل", row.get('client_name', ''))
-                        u_phone = st.text_input("التليفون الأول", row.get('phone', ''), max_chars=11)
-                        u_phone2 = st.text_input("التليفون الثاني", row.get('phone2', ''), max_chars=11)
-                        current_tech_idx = staff_names.index(row.get('tech_name', '')) if row.get('tech_name') in staff_names else 0
-                        if current_tech_idx == 0 and "جميع الفنيين" in staff_names:
-                            current_tech_idx = 0
-                        u_tech = st.selectbox("اسم الفني", ["لم يتم التحديد"] + staff_names[1:], index=current_tech_idx if current_tech_idx > 0 else 0)
-                    with col_r:
-                        u_cost = st.text_input("التكلفة", row.get('cost', ''))
-                        current_gov_idx = ALL_GOVS.index(row.get('governorate', 'القاهرة')) if row.get('governorate') in ALL_GOVS else 0
-                        u_gov = st.selectbox("المحافظة", ALL_GOVS, index=current_gov_idx)
-                        u_addr = st.text_input("العنوان", row.get('address', ''))
-                        u_date = st.date_input("تاريخ المعاينة", datetime.strptime(row['visit_date'], '%Y-%m-%d') if row.get('visit_date') else datetime.now())
-                        u_status = st.selectbox("حالة المعاينة", STATUS_OPTIONS, index=STATUS_OPTIONS.index(row.get('status', 'جديدة')) if row.get('status') in STATUS_OPTIONS else 0)
+                # عرض المعاينات مجمعة حسب اليوم
+                for date in current_dates:
+                    st.markdown(f"### 📅 {date}")
+                    df_day = df_display[df_display['display_date'] == date]
                     
-                    u_notes = st.text_area("ملاحظات إضافية", row.get('notes', ''))
-                    st.write(f"**وصف العطل المسجل:** {row.get('report', '')}")
-                    st.markdown("---")
-                    new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
+                    display_cols = ['العميل', 'التليفون', 'تليفون 2', 'الفني', 'التكلفة', 'المحافظة', 'العنوان', 'الحالة', 'واتساب']
+                    cols_to_show = [col for col in display_cols if col in df_day.columns]
                     
-                    col_save, col_del = st.columns(2)
+                    # إعادة تعريف عمود الواتساب بلوجو
+                    df_day_display = df_day[cols_to_show].copy()
+                    df_day_display['واتساب'] = df_day['phone'].apply(lambda x: f"📱 [مراسلة](https://wa.me/{''.join(filter(str.isdigit, str(x)))})" if x and str(x).strip() else "#")
                     
-                    with col_save:
-                        if st.form_submit_button("💾 حفظ التعديلات", use_container_width=True):
-                            valid1, msg1 = validate_phone(u_phone)
-                            valid2, msg2 = validate_phone(u_phone2) if u_phone2 else (True, "")
+                    event = st.dataframe(
+                        df_day_display,
+                        use_container_width=True,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        column_config={
+                            "واتساب": st.column_config.Column("واتساب", help="انقر للمراسلة عبر واتساب")
+                        }
+                    )
+                    
+                    selected_rows = event.selection.rows
+                    if selected_rows:
+                        selected_index = selected_rows[0]
+                        selected_id = df_day.iloc[selected_index]['id']
+                        
+                        st.divider()
+                        st.subheader(f"🛠️ إجراءات التعديل: {df_day.iloc[selected_index]['العميل']}")
+                        
+                        row = df[df['id'] == selected_id].iloc[0]
+                        
+                        if row.get('file_name'):
+                            st.info(f"📎 الملف المرفق: {row['file_name']}")
+                            display_pdf_pdfjs(row['file_name'])
+                            st.markdown("---")
+                        else:
+                            st.info("📭 لا يوجد ملف مرفق")
+                            st.markdown("---")
+                        
+                        with st.form(f"edit_form_{selected_id}"):
+                            col_l, col_r = st.columns(2)
+                            with col_l:
+                                u_name = st.text_input("اسم العميل", row.get('client_name', ''))
+                                u_phone = st.text_input("التليفون الأول", row.get('phone', ''), max_chars=11)
+                                u_phone2 = st.text_input("التليفون الثاني", row.get('phone2', ''), max_chars=11)
+                                current_tech_idx = staff_names.index(row.get('tech_name', '')) if row.get('tech_name') in staff_names else 0
+                                if current_tech_idx == 0 and "جميع الفنيين" in staff_names:
+                                    current_tech_idx = 0
+                                u_tech = st.selectbox("اسم الفني", ["لم يتم التحديد"] + staff_names[1:], index=current_tech_idx if current_tech_idx > 0 else 0)
+                            with col_r:
+                                u_cost = st.text_input("التكلفة", row.get('cost', ''))
+                                current_gov_idx = ALL_GOVS.index(row.get('governorate', 'القاهرة')) if row.get('governorate') in ALL_GOVS else 0
+                                u_gov = st.selectbox("المحافظة", ALL_GOVS, index=current_gov_idx)
+                                u_addr = st.text_input("العنوان", row.get('address', ''))
+                                u_date = st.date_input("تاريخ المعاينة", datetime.strptime(row['visit_date'], '%Y-%m-%d') if row.get('visit_date') else datetime.now())
+                                u_status = st.selectbox("حالة المعاينة", STATUS_OPTIONS, index=STATUS_OPTIONS.index(row.get('status', 'جديدة')) if row.get('status') in STATUS_OPTIONS else 0)
                             
-                            if not valid1:
-                                st.error(msg1)
-                            elif not valid2:
-                                st.error(msg2)
-                            else:
-                                file_name = row.get('file_name', '')
-                                if new_pdf:
-                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
-                                    file_path = os.path.join(UPLOAD_FOLDER, file_name)
-                                    with open(file_path, "wb") as f:
-                                        f.write(new_pdf.getbuffer())
-                                    if row.get('file_name'):
-                                        old_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
-                                        if os.path.exists(old_path):
-                                            try:
-                                                os.remove(old_path)
-                                            except:
-                                                pass
-                                
-                                update_repair(selected_id, {
-                                    "client_name": u_name, "phone": u_phone, "phone2": u_phone2,
-                                    "tech_name": u_tech if u_tech != "لم يتم التحديد" else "",
-                                    "cost": u_cost, "governorate": u_gov,
-                                    "address": u_addr, "notes": u_notes, "visit_date": str(u_date),
-                                    "status": u_status, "file_name": file_name
-                                })
-                                
-                                add_or_update_customer(u_name, u_phone, u_phone2, u_addr, u_gov)
-                                update_customer_cost(u_phone, u_cost)
-                                
-                                st.success("✅ تم التحديث بنجاح!")
-                                st.rerun()
-                    
-                    with col_del:
-                        if st.session_state.user_role == "admin":
-                            if st.form_submit_button("🗑️ مسح المعاينة", type="secondary", use_container_width=True):
-                                if row.get('file_name'):
-                                    file_to_delete = os.path.join(UPLOAD_FOLDER, row['file_name'])
-                                    if os.path.exists(file_to_delete):
-                                        try:
-                                            os.remove(file_to_delete)
-                                        except:
-                                            pass
-                                delete_repair(selected_id)
-                                add_notification("تم مسح معاينة", f"تم مسح معاينة العميل {row.get('client_name', '')}", "warning")
-                                st.success("🗑️ تم المسح بنجاح!")
-                                st.rerun()
+                            u_notes = st.text_area("ملاحظات إضافية", row.get('notes', ''))
+                            st.write(f"**وصف العطل المسجل:** {row.get('report', '')}")
+                            st.markdown("---")
+                            new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
+                            
+                            col_save, col_del = st.columns(2)
+                            
+                            with col_save:
+                                if st.form_submit_button("💾 حفظ التعديلات", use_container_width=True):
+                                    valid1, msg1 = validate_phone(u_phone)
+                                    valid2, msg2 = validate_phone(u_phone2) if u_phone2 else (True, "")
+                                    
+                                    if not valid1:
+                                        st.error(msg1)
+                                    elif not valid2:
+                                        st.error(msg2)
+                                    else:
+                                        file_name = row.get('file_name', '')
+                                        if new_pdf:
+                                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                            file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
+                                            file_path = os.path.join(UPLOAD_FOLDER, file_name)
+                                            with open(file_path, "wb") as f:
+                                                f.write(new_pdf.getbuffer())
+                                            if row.get('file_name'):
+                                                old_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
+                                                if os.path.exists(old_path):
+                                                    try:
+                                                        os.remove(old_path)
+                                                    except:
+                                                        pass
+                                        
+                                        update_repair(selected_id, {
+                                            "client_name": u_name, "phone": u_phone, "phone2": u_phone2,
+                                            "tech_name": u_tech if u_tech != "لم يتم التحديد" else "",
+                                            "cost": u_cost, "governorate": u_gov,
+                                            "address": u_addr, "notes": u_notes, "visit_date": str(u_date),
+                                            "status": u_status, "file_name": file_name
+                                        })
+                                        
+                                        add_or_update_customer(u_name, u_phone, u_phone2, u_addr, u_gov)
+                                        update_customer_cost(u_phone, u_cost)
+                                        
+                                        st.success("✅ تم التحديث بنجاح!")
+                                        st.rerun()
+                            
+                            with col_del:
+                                if st.session_state.user_role == "admin":
+                                    if st.form_submit_button("🗑️ مسح المعاينة", type="secondary", use_container_width=True):
+                                        if row.get('file_name'):
+                                            file_to_delete = os.path.join(UPLOAD_FOLDER, row['file_name'])
+                                            if os.path.exists(file_to_delete):
+                                                try:
+                                                    os.remove(file_to_delete)
+                                                except:
+                                                    pass
+                                        delete_repair(selected_id)
+                                        add_notification("تم مسح معاينة", f"تم مسح معاينة العميل {row.get('client_name', '')}", "warning")
+                                        st.success("🗑️ تم المسح بنجاح!")
+                                        st.rerun()
+                        
+                        st.markdown("---")
                 
-                st.markdown("---")
+                # شريط التنقل بين الصفحات
+                if total_pages > 1:
+                    st.markdown("---")
+                    col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns([1, 1, 2, 1, 1])
+                    
+                    with col_p1:
+                        if st.button("⏮️ الأولى", use_container_width=True):
+                            st.session_state.current_page = 1
+                            st.rerun()
+                    with col_p2:
+                        if st.button("⬅️ السابقة", use_container_width=True):
+                            if st.session_state.current_page > 1:
+                                st.session_state.current_page -= 1
+                                st.rerun()
+                    with col_p3:
+                        st.markdown(f"<div style='text-align:center; padding:8px;'>الصفحة {st.session_state.current_page} من {total_pages}</div>", unsafe_allow_html=True)
+                    with col_p4:
+                        if st.button("التالي ➡️", use_container_width=True):
+                            if st.session_state.current_page < total_pages:
+                                st.session_state.current_page += 1
+                                st.rerun()
+                    with col_p5:
+                        if st.button("الأخيرة ⏭️", use_container_width=True):
+                            st.session_state.current_page = total_pages
+                            st.rerun()
+            else:
+                st.info("📭 لا توجد سجلات في هذا النطاق")
+        else:
+            st.info("📭 لا توجد سجلات تطابق معايير البحث")
     else:
         st.info("📭 لا توجد سجلات حالياً.")
 
