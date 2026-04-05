@@ -30,20 +30,17 @@ st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
 # ==================== ستايل مخصص ====================
 st.markdown("""
     <style>
-    /* اتجاه الصفحة بالكامل من اليمين لليسار */
     .stApp {
         background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
         color: #ffffff;
         direction: rtl;
     }
     
-    /* اتجاه كل العناصر من اليمين */
     div, p, h1, h2, h3, h4, h5, h6, span, label, .stMarkdown {
         direction: rtl;
         text-align: right;
     }
     
-    /* تنسيق الفورمات */
     [data-testid="stForm"] {
         border: 1px solid #00b4d8;
         border-radius: 20px;
@@ -52,7 +49,6 @@ st.markdown("""
         box-shadow: 0 8px 32px rgba(0, 180, 216, 0.1);
     }
     
-    /* التبويبات */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         justify-content: flex-start;
@@ -74,7 +70,6 @@ st.markdown("""
         transform: translateY(-2px);
     }
     
-    /* البطاقات الإحصائية */
     .metric-card {
         background: linear-gradient(135deg, #1a1a2e, #16213e);
         border-radius: 20px;
@@ -101,7 +96,6 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* الأزرار */
     .stButton > button {
         background: linear-gradient(135deg, #00b4d8, #0077b6);
         color: white;
@@ -122,7 +116,6 @@ st.markdown("""
         background: linear-gradient(135deg, #e63946, #c1121f);
     }
     
-    /* حقول الإدخال */
     .stTextInput > div > div > input, .stSelectbox > div > div, .stTextArea > div > textarea {
         background-color: #1a1a2e;
         border: 1px solid #00b4d8;
@@ -131,7 +124,7 @@ st.markdown("""
         direction: rtl;
     }
     
-    /* الجدول - اتجاه من اليمين لليسار */
+    /* اتجاه الجدول من اليمين لليسار */
     .stDataFrame {
         direction: rtl;
     }
@@ -145,7 +138,11 @@ st.markdown("""
         text-align: right !important;
     }
     
-    /* الرسوم البيانية */
+    /* إعادة ترتيب أعمدة الجدول */
+    .stDataFrame thead tr th:first-child {
+        text-align: right !important;
+    }
+    
     .stPlotlyChart {
         background: linear-gradient(135deg, #1a1a2e, #16213e);
         border-radius: 20px;
@@ -153,31 +150,47 @@ st.markdown("""
         border: 1px solid #00b4d8;
     }
     
-    /* الأكسباندير */
     .streamlit-expanderHeader {
         background: linear-gradient(135deg, #1a1a2e, #16213e);
         border-radius: 12px;
         border: 1px solid #00b4d8;
     }
     
-    /* الإشعارات */
     .stAlert {
         border-radius: 12px;
         border-right: 4px solid #00b4d8;
     }
     
-    /* أزرار الحالات */
     .status-new { background: #00b4d8; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
     .status-completed { background: #2ecc71; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
     .status-delayed { background: #e67e22; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
     
-    /* تنسيق أزرار التنقل بين الصفحات */
     .pagination {
         display: flex;
         justify-content: center;
         gap: 10px;
         margin-top: 20px;
         direction: ltr;
+    }
+    
+    /* لوجو واتساب أخضر */
+    .whatsapp-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #25D366;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 20px;
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    
+    .whatsapp-link:hover {
+        background-color: #128C7E;
+        transform: scale(1.05);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -263,7 +276,6 @@ def get_repairs():
         df = pd.DataFrame(data)
         if 'status' not in df.columns:
             df['status'] = 'جديدة'
-        # ترتيب حسب التاريخ تنازلياً
         if 'visit_date' in df.columns:
             df = df.sort_values('visit_date', ascending=False)
         return df
@@ -815,14 +827,12 @@ with tab1:
 
 # ==================== دوال مساعدة لصفحات المعاينات ====================
 def paginate_dataframe(df, page_num, rows_per_page=10):
-    """تقسيم DataFrame إلى صفحات"""
     total_rows = len(df)
     total_pages = math.ceil(total_rows / rows_per_page)
     
     if total_pages == 0:
         total_pages = 1
     
-    # التأكد من أن رقم الصفحة ضمن النطاق
     page_num = max(1, min(page_num, total_pages))
     
     start_idx = (page_num - 1) * rows_per_page
@@ -865,7 +875,6 @@ with tab2:
         
         df = repairs_df.copy()
         
-        # تطبيق الفلاتر
         if search_query and 'client_name' in df.columns:
             df = df[df['client_name'].str.contains(search_query, na=False, case=False)]
         if search_phone and 'phone' in df.columns:
@@ -880,12 +889,10 @@ with tab2:
             df = df[df['status'] == selected_status]
         
         if not df.empty:
-            # إضافة عمود التاريخ للفصل
             if 'visit_date' in df.columns:
                 df['visit_date_obj'] = pd.to_datetime(df['visit_date'])
                 df['display_date'] = df['visit_date_obj'].dt.date
             
-            # تحضير البيانات للعرض
             df_display = df.copy()
             df_display['العميل'] = df_display['client_name'] if 'client_name' in df_display else ""
             df_display['التليفون'] = df_display['phone'] if 'phone' in df_display else ""
@@ -897,23 +904,21 @@ with tab2:
             df_display['العنوان'] = df_display['address'] if 'address' in df_display else ""
             df_display['الحالة'] = df_display['status'].map(lambda x: STATUS_STYLES.get(x, x)) if 'status' in df_display else ""
             
-            def make_wa_link(phone_num):
+            # دالة إنشاء رابط واتساب بلوجو أخضر
+            def make_whatsapp_link(phone_num):
                 if not phone_num or phone_num == "" or pd.isna(phone_num):
                     return "#"
                 p = str(phone_num).strip()
                 p = ''.join(filter(str.isdigit, p))
                 if p:
                     num = p if p.startswith('2') else '2' + p
-                    return f"https://wa.me/{num}"
+                    return f'<a href="https://wa.me/{num}" target="_blank" class="whatsapp-link">📱 واتساب</a>'
                 return "#"
             
-            # رابط واتساب بلوجو أخضر
-            df_display['واتساب'] = df_display['phone'].apply(lambda x: f"https://wa.me/{''.join(filter(str.isdigit, str(x)))}" if x and str(x).strip() else "#")
+            df_display['واتساب'] = df_display['phone'].apply(make_whatsapp_link) if 'phone' in df_display else "#"
             
-            # الحصول على التواريخ الفريدة للفصل
             unique_dates = sorted(df_display['display_date'].unique(), reverse=True) if 'display_date' in df_display.columns else []
             
-            # إعداد متغيرات التصفح
             if 'current_page' not in st.session_state:
                 st.session_state.current_page = 1
             
@@ -923,7 +928,6 @@ with tab2:
             total_pages = math.ceil(total_dates / dates_per_page)
             
             if total_pages > 0:
-                # حساب الصفحة الحالية
                 if st.session_state.current_page < 1:
                     st.session_state.current_page = 1
                 if st.session_state.current_page > total_pages:
@@ -935,7 +939,6 @@ with tab2:
                 
                 st.write(f"🔎 تم العثور على {len(df_display)} سجل")
                 
-                # عرض المعاينات مجمعة حسب اليوم
                 for date in current_dates:
                     st.markdown(f"### 📅 {date}")
                     df_day = df_display[df_display['display_date'] == date]
@@ -943,9 +946,7 @@ with tab2:
                     display_cols = ['العميل', 'التليفون', 'تليفون 2', 'الفني', 'التكلفة', 'المحافظة', 'العنوان', 'الحالة', 'واتساب']
                     cols_to_show = [col for col in display_cols if col in df_day.columns]
                     
-                    # إعادة تعريف عمود الواتساب بلوجو
                     df_day_display = df_day[cols_to_show].copy()
-                    df_day_display['واتساب'] = df_day['phone'].apply(lambda x: f"📱 [مراسلة](https://wa.me/{''.join(filter(str.isdigit, str(x)))})" if x and str(x).strip() else "#")
                     
                     event = st.dataframe(
                         df_day_display,
@@ -1056,7 +1057,6 @@ with tab2:
                         
                         st.markdown("---")
                 
-                # شريط التنقل بين الصفحات
                 if total_pages > 1:
                     st.markdown("---")
                     col_p1, col_p2, col_p3, col_p4, col_p5 = st.columns([1, 1, 2, 1, 1])
