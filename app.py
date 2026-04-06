@@ -26,18 +26,37 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
-    conn.cursor().execute('''CREATE TABLE IF NOT EXISTS repairs
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, client_name TEXT, phone TEXT,
-                  tech_name TEXT, assistant_name TEXT, visit_date TEXT,
-                  governorate TEXT, address TEXT, report TEXT,
-                  notes TEXT, file_name TEXT, cost TEXT)''')  # تغيير file_path إلى file_name
-    conn.cursor().execute('''CREATE TABLE IF NOT EXISTS staff
+    cursor = conn.cursor()
+    
+    # إنشاء جدول repairs مع file_name بدلاً من file_path
+    cursor.execute('''CREATE TABLE IF NOT EXISTS repairs
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                  client_name TEXT, 
+                  phone TEXT,
+                  tech_name TEXT, 
+                  assistant_name TEXT, 
+                  visit_date TEXT,
+                  governorate TEXT, 
+                  address TEXT, 
+                  report TEXT,
+                  notes TEXT, 
+                  file_name TEXT, 
+                  cost TEXT)''')
+    
+    # إضافة عمود file_name إذا كان موجوداً بالفعل باسم file_path (للتحديث من الإصدار القديم)
+    try:
+        cursor.execute("ALTER TABLE repairs ADD COLUMN file_name TEXT")
+    except:
+        pass
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS staff
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
+    
     conn.commit()
     conn.close()
+
 init_db()
 
-# دالة عرض الـ PDF (محسنة)
 def display_pdf(file_name):
     """عرض ملف PDF من اسم الملف المخزن في قاعدة البيانات"""
     try:
@@ -45,7 +64,6 @@ def display_pdf(file_name):
             st.error("❌ لا يوجد ملف مرفق")
             return
         
-        # بناء المسار الكامل من اسم الملف
         actual_path = os.path.join(UPLOAD_FOLDER, file_name)
        
         if not os.path.exists(actual_path):
@@ -56,7 +74,6 @@ def display_pdf(file_name):
         with open(actual_path, "rb") as f:
             pdf_bytes = f.read()
         
-        # أزرار التحميل والعرض
         col1, col2 = st.columns([1, 1])
         with col1:
             st.download_button(
@@ -69,7 +86,6 @@ def display_pdf(file_name):
         with col2:
             st.info("📌 جرب تشغل المتصفح **Firefox** لو عايز تشوف الـ PDF مباشرة في الصفحة")
         
-        # عرض PDF مضمن
         base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
         pdf_display = f'''
         <iframe src="data:application/pdf;base64,{base64_pdf}" 
@@ -123,7 +139,7 @@ with tab3:
                     conn.close()
                     st.rerun()
 
-# جلب أسماء الفنيين مرة واحدة للاستخدام المتكرر
+# جلب أسماء الفنيين
 conn = get_db_connection()
 staff_df = pd.read_sql_query("SELECT * FROM staff", conn)
 conn.close()
@@ -149,7 +165,6 @@ with tab1:
         if st.form_submit_button("حفظ البيانات النهائية"):
             file_name = ""
             if file:
-                # حفظ الملف باستخدام اسم فريد لتجنب التكرار
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 file_name = f"{name}_{timestamp}_{file.name}"
                 file_path = os.path.join(UPLOAD_FOLDER, file_name)
@@ -185,10 +200,8 @@ with tab2:
         
         df = df_raw.copy()
         
-        # تحسين زر الواتساب باستخدام أيقونة واتساب
         def make_wa_link(phone_num):
             p = str(phone_num).strip()
-            # إزالة أي أحرف غير رقمية
             p = ''.join(filter(str.isdigit, p))
             if not p.startswith('2') and len(p) == 11:
                 p = '2' + p
@@ -207,7 +220,6 @@ with tab2:
         
         st.write(f"🔎 تم العثور على {len(df)} سجل")
         
-        # عرض الجدول مع تحسين عمود الواتساب
         event = st.dataframe(
             df.drop(columns=['id', 'file_name']),
             use_container_width=True,
@@ -253,7 +265,6 @@ with tab2:
                 st.write(f"**وصف العطل المسجل:** {row['report']}")
                 st.markdown("---")
                 
-                # عرض الملف المرفق الحالي إن وجد
                 if row['file_name']:
                     st.info(f"📎 الملف المرفق الحالي: {row['file_name']}")
                 
@@ -262,17 +273,15 @@ with tab2:
                 b_save, b_del, b_pdf = st.columns([1, 1, 2])
                
                 if b_save.form_submit_button("💾 حفظ التعديلات"):
-                    file_name = row['file_name']  # الاحتفاظ بالاسم الحالي
+                    file_name = row['file_name']
                     
                     if new_pdf:
-                        # إنشاء اسم ملف جديد عند التحديث
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
                         file_path = os.path.join(UPLOAD_FOLDER, file_name)
                         with open(file_path, "wb") as f:
                             f.write(new_pdf.getbuffer())
                         
-                        # حذف الملف القديم إن وجد
                         if row['file_name']:
                             old_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
                             if os.path.exists(old_path):
@@ -292,7 +301,6 @@ with tab2:
                     st.rerun()
                
                 if b_del.form_submit_button("🗑️ مسح المعاينة"):
-                    # حذف الملف المرتبط إن وجد
                     if row['file_name']:
                         file_to_delete = os.path.join(UPLOAD_FOLDER, row['file_name'])
                         if os.path.exists(file_to_delete):
