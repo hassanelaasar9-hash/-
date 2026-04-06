@@ -30,15 +30,30 @@ st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
 # ==================== ستايل مخصص ====================
 st.markdown("""
     <style>
+    /* قلب اتجاه الجداول والقوائم لليمين */
+    [data-testid="stTable"], [data-testid="stDataFrame"], .stTable, div[dir="ltr"] {
+        direction: RTL !important;
+        text-align: right !important;
+    }
+    /* هوية الواتساب البصرية */
+    .whatsapp-link {
+        background-color: #25D366 !important;
+        color: white !important;
+        padding: 5px 12px !important;
+        border-radius: 20px !important;
+        text-decoration: none !important;
+        font-weight: bold !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        border: 1px solid #128C7E;
+    }
+    .whatsapp-link:hover {
+        background-color: #128C7E !important;
+    }
+    
     .stApp {
         background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
         color: #ffffff;
-        direction: rtl;
-    }
-    
-    div, p, h1, h2, h3, h4, h5, h6, span, label, .stMarkdown {
-        direction: rtl;
-        text-align: right;
     }
     
     [data-testid="stForm"] {
@@ -121,25 +136,14 @@ st.markdown("""
         border: 1px solid #00b4d8;
         border-radius: 12px;
         color: white;
-        direction: rtl;
-    }
-    
-    /* اتجاه الجدول من اليمين لليسار */
-    .stDataFrame {
-        direction: rtl;
     }
     
     .stDataFrame table {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    .stDataFrame th, .stDataFrame td {
+        direction: RTL !important;
         text-align: right !important;
     }
     
-    /* إعادة ترتيب أعمدة الجدول */
-    .stDataFrame thead tr th:first-child {
+    .stDataFrame th, .stDataFrame td {
         text-align: right !important;
     }
     
@@ -170,27 +174,6 @@ st.markdown("""
         justify-content: center;
         gap: 10px;
         margin-top: 20px;
-        direction: ltr;
-    }
-    
-    /* لوجو واتساب أخضر */
-    .whatsapp-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background-color: #25D366;
-        color: white;
-        padding: 6px 12px;
-        border-radius: 20px;
-        text-decoration: none;
-        font-size: 12px;
-        font-weight: bold;
-        transition: all 0.3s ease;
-    }
-    
-    .whatsapp-link:hover {
-        background-color: #128C7E;
-        transform: scale(1.05);
     }
     </style>
     """, unsafe_allow_html=True)
