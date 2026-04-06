@@ -36,6 +36,11 @@ st.markdown("""
         direction: rtl;
     }
     
+    div, p, h1, h2, h3, h4, h5, h6, span, label {
+        direction: rtl;
+        text-align: right;
+    }
+    
     [data-testid="stForm"] {
         border: 1px solid #00b4d8;
         border-radius: 20px;
@@ -118,15 +123,6 @@ st.markdown("""
         color: white;
     }
     
-    .stDataFrame table {
-        direction: rtl;
-        text-align: right;
-    }
-    
-    .stDataFrame th, .stDataFrame td {
-        text-align: right !important;
-    }
-    
     .stPlotlyChart {
         background: linear-gradient(135deg, #1a1a2e, #16213e);
         border-radius: 20px;
@@ -138,6 +134,7 @@ st.markdown("""
         background: linear-gradient(135deg, #1a1a2e, #16213e);
         border-radius: 12px;
         border: 1px solid #00b4d8;
+        font-weight: bold;
     }
     
     .stAlert {
@@ -154,6 +151,7 @@ st.markdown("""
         justify-content: center;
         gap: 10px;
         margin-top: 20px;
+        direction: ltr;
     }
     
     .whatsapp-link {
@@ -252,7 +250,6 @@ def get_repairs():
     if data and len(data) > 0:
         df = pd.DataFrame(data)
         
-        # إعادة تسمية الأعمدة من إنجليزي لعربي
         column_mapping = {
             'id': 'id',
             'client_name': 'اسم العميل',
@@ -271,7 +268,6 @@ def get_repairs():
             'created_date': 'تاريخ الإنشاء'
         }
         
-        # تطبيق إعادة التسمية للأعمدة الموجودة فقط
         existing_mapping = {k: v for k, v in column_mapping.items() if k in df.columns}
         df = df.rename(columns=existing_mapping)
         
@@ -446,6 +442,11 @@ def display_pdf_pdfjs(file_name):
             os.makedirs(UPLOAD_FOLDER)
         
         file_path = os.path.join(UPLOAD_FOLDER, file_name)
+        
+        # التأكد من وجود المجلد قبل فتح الملف
+        if not os.path.exists(os.path.dirname(file_path)):
+            os.makedirs(os.path.dirname(file_path))
+        
         if not os.path.exists(file_path):
             st.error(f"⚠️ الملف غير موجود: {file_name}")
             return
@@ -821,7 +822,6 @@ with tab1:
             else:
                 file_name = ""
                 if file:
-                    # التأكد من وجود المجلد قبل حفظ الملف
                     if not os.path.exists(UPLOAD_FOLDER):
                         os.makedirs(UPLOAD_FOLDER)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -857,13 +857,14 @@ with tab1:
                 else:
                     st.error("❌ حدث خطأ في حفظ البيانات")
 
-# ==================== تبويب سجل المعاينات ====================
+# ==================== تبويب سجل المعاينات (بالشكل الاحترافي) ====================
 with tab2:
     st.subheader("📋 سجل المعاينات")
     
     repairs_df = get_repairs()
     
     if not repairs_df.empty:
+        # فلترة متقدمة
         st.markdown("### 🔍 بحث وتصفية متقدم")
         
         col_f1, col_f2, col_f3 = st.columns(3)
@@ -890,7 +891,7 @@ with tab2:
         
         df = repairs_df.copy()
         
-        # تطبيق الفلاتر (باستخدام الأسماء العربية)
+        # تطبيق الفلاتر
         if search_query and 'اسم العميل' in df.columns:
             df = df[df['اسم العميل'].str.contains(search_query, na=False, case=False)]
         if search_phone and 'رقم التليفون' in df.columns:
@@ -910,39 +911,14 @@ with tab2:
                 df['تاريخ_المعاينة_obj'] = pd.to_datetime(df['تاريخ المعاينة'])
                 df['تاريخ_العرض'] = df['تاريخ_المعاينة_obj'].dt.date
             
-            # ترتيب الأعمدة للعرض
-            display_cols = ['اسم العميل', 'رقم التليفون', 'رقم تليفون 2', 'اسم الفني', 'التكلفة', 'تاريخ المعاينة', 'المحافظة', 'العنوان', 'الحالة']
-            existing_cols = [col for col in display_cols if col in df.columns]
-            df_display = df[existing_cols].copy()
-            
-            # دالة إنشاء رابط واتساب بلوجو أخضر
-            def make_whatsapp_link(phone_num):
-                if not phone_num or phone_num == "" or pd.isna(phone_num):
-                    return "#"
-                p = str(phone_num).strip()
-                p = ''.join(filter(str.isdigit, p))
-                if p:
-                    num = p if p.startswith('2') else '2' + p
-                    return f'<a href="https://wa.me/{num}" target="_blank" class="whatsapp-link">📱 واتساب</a>'
-                return "#"
-            
-            # إضافة عمود الواتساب
-            df_display['واتساب'] = df['رقم التليفون'].apply(make_whatsapp_link) if 'رقم التليفون' in df.columns else "#"
-            
-            # إعادة ترتيب الأعمدة النهائية
-            final_cols = ['اسم العميل', 'رقم التليفون', 'رقم تليفون 2', 'اسم الفني', 'التكلفة', 'تاريخ المعاينة', 'المحافظة', 'العنوان', 'الحالة', 'واتساب']
-            final_existing = [col for col in final_cols if col in df_display.columns]
-            df_display = df_display[final_existing]
-            
-            # تجميع المعاينات حسب التاريخ
             unique_dates = sorted(df['تاريخ_العرض'].unique(), reverse=True) if 'تاريخ_العرض' in df.columns else []
             
+            # نظام التصفح بين الصفحات
             if 'current_page' not in st.session_state:
                 st.session_state.current_page = 1
             
             total_dates = len(unique_dates)
             dates_per_page = 5
-            
             total_pages = math.ceil(total_dates / dates_per_page) if total_dates > 0 else 1
             
             if total_dates > 0:
@@ -955,117 +931,144 @@ with tab2:
                 end_date_idx = min(start_date_idx + dates_per_page, total_dates)
                 current_dates = unique_dates[start_date_idx:end_date_idx]
                 
-                st.write(f"🔎 تم العثور على {len(df_display)} سجل")
+                st.write(f"🔎 تم العثور على {len(df)} معاينة")
                 
+                # عرض المعاينات مجمعة حسب اليوم
                 for date in current_dates:
-                    st.markdown(f"### 📅 {date}")
-                    df_day = df_display[df['تاريخ_العرض'] == date].copy()
-                    df_day = df_day.drop(columns=['تاريخ_العرض'], errors='ignore')
+                    st.markdown(f"## 📅 {date}")
+                    df_day = df[df['تاريخ_العرض'] == date]
                     
-                    # عرض الجدول باستخدام st.write مع to_html لتشغيل روابط HTML
-                    st.write(df_day.to_html(escape=False, index=False), unsafe_allow_html=True)
-                    
-                    # جزء التعديل - نعرضه بشكل منفصل
-                    day_ids = df[df['تاريخ_العرض'] == date]['id'].tolist() if 'تاريخ_العرض' in df.columns else []
-                    
-                    if day_ids:
-                        selected_id_for_edit = st.selectbox(f"اختر معاينة لتعديلها - {date}", day_ids, key=f"select_{date}")
-                        if selected_id_for_edit:
-                            row = df[df['id'] == selected_id_for_edit].iloc[0]
+                    # عرض كل معاينة في Expander منفصل
+                    for idx, row in df_day.iterrows():
+                        # تحديد لون الحالة
+                        status_color = "🟦" if row.get('الحالة') == 'جديدة' else ("🟩" if row.get('الحالة') == 'تمت' else "🟧")
+                        
+                        with st.expander(f"{status_color} معاينة: {row.get('اسم العميل', 'غير محدد')} - التكلفة: {row.get('التكلفة', '0')} ج.م"):
+                            # عرض تفاصيل المعاينة
+                            col1, col2 = st.columns(2)
                             
-                            st.divider()
-                            st.subheader(f"🛠️ إجراءات التعديل: {row.get('اسم العميل', '')}")
+                            with col1:
+                                st.markdown(f"**👤 اسم العميل:** {row.get('اسم العميل', '-')}")
+                                st.markdown(f"**📞 رقم التليفون:** {row.get('رقم التليفون', '-')}")
+                                st.markdown(f"**📞 رقم تليفون 2:** {row.get('رقم تليفون 2', '-')}")
+                                st.markdown(f"**👨‍🔧 اسم الفني:** {row.get('اسم الفني', '-')}")
+                                st.markdown(f"**📍 المحافظة:** {row.get('المحافظة', '-')}")
                             
-                            if row.get('اسم الملف'):
-                                st.info(f"📎 الملف المرفق: {row['اسم الملف']}")
-                                display_pdf_pdfjs(row['اسم الملف'])
-                                st.markdown("---")
-                            else:
-                                st.info("📭 لا يوجد ملف مرفق")
-                                st.markdown("---")
+                            with col2:
+                                st.markdown(f"**🏠 العنوان:** {row.get('العنوان', '-')}")
+                                st.markdown(f"**💰 التكلفة:** {row.get('التكلفة', '0')} ج.م")
+                                st.markdown(f"**📌 الحالة:** {row.get('الحالة', '-')}")
+                                st.markdown(f"**📅 تاريخ المعاينة:** {row.get('تاريخ المعاينة', '-')}")
                             
-                            with st.form(f"edit_form_{selected_id_for_edit}"):
-                                col_l, col_r = st.columns(2)
-                                with col_l:
-                                    u_name = st.text_input("اسم العميل", row.get('اسم العميل', ''))
-                                    u_phone = st.text_input("رقم التليفون الأول", row.get('رقم التليفون', ''), max_chars=11)
-                                    u_phone2 = st.text_input("رقم التليفون الثاني", row.get('رقم تليفون 2', ''), max_chars=11)
-                                    current_tech_idx = staff_names.index(row.get('اسم الفني', '')) if row.get('اسم الفني') in staff_names else 0
-                                    if current_tech_idx == 0 and "جميع الفنيين" in staff_names:
-                                        current_tech_idx = 0
-                                    u_tech = st.selectbox("اسم الفني", ["لم يتم التحديد"] + staff_names[1:], index=current_tech_idx if current_tech_idx > 0 else 0)
-                                with col_r:
-                                    u_cost = st.text_input("التكلفة", row.get('التكلفة', ''))
-                                    current_gov_idx = ALL_GOVS.index(row.get('المحافظة', 'القاهرة')) if row.get('المحافظة') in ALL_GOVS else 0
-                                    u_gov = st.selectbox("المحافظة", ALL_GOVS, index=current_gov_idx)
-                                    u_addr = st.text_input("العنوان", row.get('العنوان', ''))
-                                    u_date = st.date_input("تاريخ المعاينة", datetime.strptime(row['تاريخ المعاينة'], '%Y-%m-%d') if row.get('تاريخ المعاينة') else datetime.now())
-                                    u_status = st.selectbox("حالة المعاينة", STATUS_OPTIONS, index=STATUS_OPTIONS.index(row.get('الحالة', 'جديدة')) if row.get('الحالة') in STATUS_OPTIONS else 0)
-                                
-                                u_notes = st.text_area("ملاحظات إضافية", row.get('ملاحظات', ''))
-                                st.write(f"**وصف العطل المسجل:** {row.get('وصف العطل', '')}")
-                                st.markdown("---")
-                                new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id_for_edit}")
-                                
-                                col_save, col_del = st.columns(2)
-                                
-                                with col_save:
-                                    if st.form_submit_button("💾 حفظ التعديلات", use_container_width=True):
-                                        valid1, msg1 = validate_phone(u_phone)
-                                        valid2, msg2 = validate_phone(u_phone2) if u_phone2 else (True, "")
-                                        
-                                        if not valid1:
-                                            st.error(msg1)
-                                        elif not valid2:
-                                            st.error(msg2)
-                                        else:
-                                            file_name = row.get('اسم الملف', '')
-                                            if new_pdf:
-                                                if not os.path.exists(UPLOAD_FOLDER):
-                                                    os.makedirs(UPLOAD_FOLDER)
-                                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                                file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
-                                                file_path = os.path.join(UPLOAD_FOLDER, file_name)
-                                                with open(file_path, "wb") as f:
-                                                    f.write(new_pdf.getbuffer())
-                                                if row.get('اسم الملف'):
-                                                    old_path = os.path.join(UPLOAD_FOLDER, row['اسم الملف'])
-                                                    if os.path.exists(old_path):
-                                                        try:
-                                                            os.remove(old_path)
-                                                        except:
-                                                            pass
-                                            
-                                            update_repair(selected_id_for_edit, {
-                                                "client_name": u_name, "phone": u_phone, "phone2": u_phone2,
-                                                "tech_name": u_tech if u_tech != "لم يتم التحديد" else "",
-                                                "cost": u_cost, "governorate": u_gov,
-                                                "address": u_addr, "notes": u_notes, "visit_date": str(u_date),
-                                                "status": u_status, "file_name": file_name
-                                            })
-                                            
-                                            add_or_update_customer(u_name, u_phone, u_phone2, u_addr, u_gov)
-                                            update_customer_cost(u_phone, u_cost)
-                                            
-                                            st.success("✅ تم التحديث بنجاح!")
-                                            st.rerun()
-                                
-                                with col_del:
-                                    if st.session_state.user_role == "admin":
-                                        if st.form_submit_button("🗑️ مسح المعاينة", type="secondary", use_container_width=True):
-                                            if row.get('اسم الملف'):
-                                                file_to_delete = os.path.join(UPLOAD_FOLDER, row['اسم الملف'])
-                                                if os.path.exists(file_to_delete):
-                                                    try:
-                                                        os.remove(file_to_delete)
-                                                    except:
-                                                        pass
-                                            delete_repair(selected_id_for_edit)
-                                            add_notification("تم مسح معاينة", f"تم مسح معاينة العميل {row.get('اسم العميل', '')}", "warning")
-                                            st.success("🗑️ تم المسح بنجاح!")
-                                            st.rerun()
+                            st.markdown(f"**📝 وصف العطل:**")
+                            st.write(row.get('وصف العطل', '-'))
+                            
+                            if row.get('ملاحظات'):
+                                st.markdown(f"**📋 ملاحظات:**")
+                                st.write(row.get('ملاحظات', '-'))
                             
                             st.markdown("---")
+                            
+                            # أزرار التحكم
+                            col_btn1, col_btn2, col_btn3 = st.columns(3)
+                            
+                            with col_btn1:
+                                # زر واتساب
+                                phone_num = row.get('رقم التليفون', '')
+                                if phone_num and phone_num != "":
+                                    p = ''.join(filter(str.isdigit, str(phone_num)))
+                                    if p:
+                                        wa_num = p if p.startswith('2') else '2' + p
+                                        st.markdown(f'<a href="https://wa.me/{wa_num}" target="_blank" class="whatsapp-link">🟢 واتساب</a>', unsafe_allow_html=True)
+                            
+                            with col_btn2:
+                                # عرض ملف PDF
+                                if row.get('اسم الملف'):
+                                    if st.button(f"📄 عرض التقرير", key=f"view_pdf_{row['id']}"):
+                                        display_pdf_pdfjs(row['اسم الملف'])
+                            
+                            with col_btn3:
+                                # تعديل المعاينة
+                                if st.button(f"✏️ تعديل", key=f"edit_btn_{row['id']}"):
+                                    st.session_state.edit_id = row['id']
+                                    st.rerun()
+                            
+                            # نموذج التعديل
+                            if st.session_state.get('edit_id') == row['id']:
+                                st.markdown("---")
+                                st.markdown("### ✏️ تعديل بيانات المعاينة")
+                                
+                                with st.form(f"edit_form_{row['id']}"):
+                                    col_l, col_r = st.columns(2)
+                                    with col_l:
+                                        u_name = st.text_input("اسم العميل", row.get('اسم العميل', ''))
+                                        u_phone = st.text_input("رقم التليفون الأول", row.get('رقم التليفون', ''), max_chars=11)
+                                        u_phone2 = st.text_input("رقم التليفون الثاني", row.get('رقم تليفون 2', ''), max_chars=11)
+                                        current_tech_idx = staff_names.index(row.get('اسم الفني', '')) if row.get('اسم الفني') in staff_names else 0
+                                        if current_tech_idx == 0 and "جميع الفنيين" in staff_names:
+                                            current_tech_idx = 0
+                                        u_tech = st.selectbox("اسم الفني", ["لم يتم التحديد"] + staff_names[1:], index=current_tech_idx if current_tech_idx > 0 else 0)
+                                    with col_r:
+                                        u_cost = st.text_input("التكلفة", row.get('التكلفة', ''))
+                                        current_gov_idx = ALL_GOVS.index(row.get('المحافظة', 'القاهرة')) if row.get('المحافظة') in ALL_GOVS else 0
+                                        u_gov = st.selectbox("المحافظة", ALL_GOVS, index=current_gov_idx)
+                                        u_addr = st.text_input("العنوان", row.get('العنوان', ''))
+                                        u_date = st.date_input("تاريخ المعاينة", datetime.strptime(row['تاريخ المعاينة'], '%Y-%m-%d') if row.get('تاريخ المعاينة') else datetime.now())
+                                        u_status = st.selectbox("حالة المعاينة", STATUS_OPTIONS, index=STATUS_OPTIONS.index(row.get('الحالة', 'جديدة')) if row.get('الحالة') in STATUS_OPTIONS else 0)
+                                    
+                                    u_notes = st.text_area("ملاحظات إضافية", row.get('ملاحظات', ''))
+                                    st.write(f"**وصف العطل المسجل:** {row.get('وصف العطل', '')}")
+                                    st.markdown("---")
+                                    new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{row['id']}")
+                                    
+                                    col_save, col_cancel = st.columns(2)
+                                    
+                                    with col_save:
+                                        if st.form_submit_button("💾 حفظ التعديلات", use_container_width=True):
+                                            valid1, msg1 = validate_phone(u_phone)
+                                            valid2, msg2 = validate_phone(u_phone2) if u_phone2 else (True, "")
+                                            
+                                            if not valid1:
+                                                st.error(msg1)
+                                            elif not valid2:
+                                                st.error(msg2)
+                                            else:
+                                                file_name = row.get('اسم الملف', '')
+                                                if new_pdf:
+                                                    if not os.path.exists(UPLOAD_FOLDER):
+                                                        os.makedirs(UPLOAD_FOLDER)
+                                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                    file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
+                                                    file_path = os.path.join(UPLOAD_FOLDER, file_name)
+                                                    with open(file_path, "wb") as f:
+                                                        f.write(new_pdf.getbuffer())
+                                                    if row.get('اسم الملف'):
+                                                        old_path = os.path.join(UPLOAD_FOLDER, row['اسم الملف'])
+                                                        if os.path.exists(old_path):
+                                                            try:
+                                                                os.remove(old_path)
+                                                            except:
+                                                                pass
+                                                
+                                                update_repair(row['id'], {
+                                                    "client_name": u_name, "phone": u_phone, "phone2": u_phone2,
+                                                    "tech_name": u_tech if u_tech != "لم يتم التحديد" else "",
+                                                    "cost": u_cost, "governorate": u_gov,
+                                                    "address": u_addr, "notes": u_notes, "visit_date": str(u_date),
+                                                    "status": u_status, "file_name": file_name
+                                                })
+                                                
+                                                add_or_update_customer(u_name, u_phone, u_phone2, u_addr, u_gov)
+                                                update_customer_cost(u_phone, u_cost)
+                                                
+                                                st.success("✅ تم التحديث بنجاح!")
+                                                st.session_state.edit_id = None
+                                                st.rerun()
+                                    
+                                    with col_cancel:
+                                        if st.form_submit_button("❌ إلغاء", use_container_width=True):
+                                            st.session_state.edit_id = None
+                                            st.rerun()
                 
                 # شريط التنقل بين الصفحات
                 if total_pages > 1:
@@ -1197,7 +1200,13 @@ with tab5:
                 if not repairs_history.empty and 'رقم التليفون' in repairs_history.columns:
                     customer_repairs = repairs_history[repairs_history['رقم التليفون'] == search_phone]
                     if not customer_repairs.empty:
-                        st.dataframe(customer_repairs[['تاريخ المعاينة', 'اسم العميل', 'التكلفة', 'اسم الفني', 'المحافظة', 'الحالة']], use_container_width=True)
+                        for _, repair in customer_repairs.iterrows():
+                            with st.expander(f"📅 {repair['تاريخ المعاينة']} - {repair['اسم العميل']}"):
+                                st.write(f"**💰 التكلفة:** {repair['التكلفة']} ج.م")
+                                st.write(f"**👨‍🔧 الفني:** {repair['اسم الفني']}")
+                                st.write(f"**📍 المحافظة:** {repair['المحافظة']}")
+                                st.write(f"**📌 الحالة:** {repair['الحالة']}")
+                                st.write(f"**📝 وصف العطل:** {repair['وصف العطل']}")
                     else:
                         st.info("📭 لا توجد معاينات سابقة")
                 else:
