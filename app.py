@@ -30,31 +30,10 @@ st.set_page_config(page_title="Expert 2M - Management System", layout="wide")
 # ==================== ستايل مخصص ====================
 st.markdown("""
     <style>
-    /* قلب اتجاه الجداول والقوائم لليمين */
-    [data-testid="stTable"], [data-testid="stDataFrame"], .stTable, div[dir="ltr"], .stDataFrame table {
-        direction: RTL !important;
-        text-align: right !important;
-    }
-    
-    /* هوية الواتساب البصرية */
-    .whatsapp-link {
-        background-color: #25D366 !important;
-        color: white !important;
-        padding: 5px 12px !important;
-        border-radius: 20px !important;
-        text-decoration: none !important;
-        font-weight: bold !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        border: 1px solid #128C7E;
-    }
-    .whatsapp-link:hover {
-        background-color: #128C7E !important;
-    }
-    
     .stApp {
         background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
         color: #ffffff;
+        direction: rtl;
     }
     
     [data-testid="stForm"] {
@@ -139,6 +118,15 @@ st.markdown("""
         color: white;
     }
     
+    .stDataFrame table {
+        direction: rtl;
+        text-align: right;
+    }
+    
+    .stDataFrame th, .stDataFrame td {
+        text-align: right !important;
+    }
+    
     .stPlotlyChart {
         background: linear-gradient(135deg, #1a1a2e, #16213e);
         border-radius: 20px;
@@ -166,6 +154,18 @@ st.markdown("""
         justify-content: center;
         gap: 10px;
         margin-top: 20px;
+    }
+    
+    .whatsapp-link {
+        background-color: #25D366;
+        color: white;
+        padding: 5px 10px;
+        border-radius: 5px;
+        text-decoration: none;
+        font-weight: bold;
+    }
+    .whatsapp-link:hover {
+        background-color: #128C7E;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -253,11 +253,6 @@ def get_repairs():
             df['status'] = 'جديدة'
         if 'visit_date' in df.columns:
             df = df.sort_values('visit_date', ascending=False)
-        # تحويل عمود التليفون إلى string صريح
-        if 'phone' in df.columns:
-            df['phone'] = df['phone'].astype(str)
-        if 'phone2' in df.columns:
-            df['phone2'] = df['phone2'].astype(str)
         return df
     return pd.DataFrame()
 
@@ -805,23 +800,6 @@ with tab1:
                 else:
                     st.error("❌ حدث خطأ في حفظ البيانات")
 
-# ==================== دوال مساعدة لصفحات المعاينات ====================
-def paginate_dataframe(df, page_num, rows_per_page=10):
-    total_rows = len(df)
-    total_pages = math.ceil(total_rows / rows_per_page)
-    
-    if total_pages == 0:
-        total_pages = 1
-    
-    page_num = max(1, min(page_num, total_pages))
-    
-    start_idx = (page_num - 1) * rows_per_page
-    end_idx = min(start_idx + rows_per_page, total_rows)
-    
-    page_df = df.iloc[start_idx:end_idx]
-    
-    return page_df, total_pages
-
 # ==================== تبويب سجل المعاينات ====================
 with tab2:
     st.subheader("📋 سجل المعاينات")
@@ -873,10 +851,6 @@ with tab2:
                 df['visit_date_obj'] = pd.to_datetime(df['visit_date'])
                 df['display_date'] = df['visit_date_obj'].dt.date
             
-            # تحويل عمود التليفون إلى string صريح
-            if 'phone' in df.columns:
-                df['phone'] = df['phone'].astype(str)
-            
             df_display = df.copy()
             df_display['العميل'] = df_display['client_name'] if 'client_name' in df_display else ""
             df_display['التليفون'] = df_display['phone'] if 'phone' in df_display else ""
@@ -888,7 +862,7 @@ with tab2:
             df_display['العنوان'] = df_display['address'] if 'address' in df_display else ""
             df_display['الحالة'] = df_display['status'].map(lambda x: STATUS_STYLES.get(x, x)) if 'status' in df_display else ""
             
-            # دالة إنشاء رابط واتساب بلوجو أخضر احترافي
+            # رابط واتساب بلوجو أخضر
             def make_whatsapp_link(phone_num):
                 if not phone_num or phone_num == "" or pd.isna(phone_num):
                     return "#"
@@ -896,14 +870,14 @@ with tab2:
                 p = ''.join(filter(str.isdigit, p))
                 if p:
                     num = p if p.startswith('2') else '2' + p
-                    return f'<a href="https://wa.me/{num}" target="_blank" style="background-color: #25D366; color: white; padding: 5px 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">🟢 WhatsApp</a>'
+                    return f'<a href="https://wa.me/{num}" target="_blank" class="whatsapp-link">📱 واتساب</a>'
                 return "#"
             
             df_display['واتساب'] = df_display['phone'].apply(make_whatsapp_link) if 'phone' in df_display else "#"
             
-            # إعادة ترتيب الأعمدة: اسم العميل أولاً
-            cols_order = ['العميل', 'التليفون', 'تليفون 2', 'الفني', 'التكلفة', 'التاريخ', 'المحافظة', 'العنوان', 'الحالة', 'واتساب']
-            existing_cols = [col for col in cols_order if col in df_display.columns]
+            # ترتيب الأعمدة
+            display_cols = ['العميل', 'التليفون', 'تليفون 2', 'الفني', 'التكلفة', 'التاريخ', 'المحافظة', 'العنوان', 'الحالة', 'واتساب']
+            existing_cols = [col for col in display_cols if col in df_display.columns]
             df_display = df_display[existing_cols]
             
             unique_dates = sorted(df_display['display_date'].unique(), reverse=True) if 'display_date' in df_display.columns else []
@@ -914,9 +888,9 @@ with tab2:
             total_dates = len(unique_dates)
             dates_per_page = 5
             
-            total_pages = math.ceil(total_dates / dates_per_page)
+            total_pages = math.ceil(total_dates / dates_per_page) if total_dates > 0 else 1
             
-            if total_pages > 0:
+            if total_dates > 0:
                 if st.session_state.current_page < 1:
                     st.session_state.current_page = 1
                 if st.session_state.current_page > total_pages:
@@ -932,14 +906,12 @@ with tab2:
                     st.markdown(f"### 📅 {date}")
                     df_day = df_display[df_display['display_date'] == date].drop(columns=['display_date', 'visit_date_obj'], errors='ignore')
                     
-                    # عرض الجدول باستخدام st.write مع to_html لتشغيل روابط HTML
-                    st.write(df_day.to_html(escape=False, index=False), unsafe_allow_html=True)
+                    # عرض الجدول
+                    st.dataframe(df_day, use_container_width=True)
                     
-                    # جزء التعديل (بدون تغيير)
-                    # نبحث عن id في البيانات الأصلية
+                    # جزء التعديل
                     day_ids = df[df['display_date'] == date]['id'].tolist() if 'display_date' in df.columns else []
                     
-                    # اختيار السجل للتعديل (نستخدم selectbox بسيط)
                     if day_ids:
                         selected_id_for_edit = st.selectbox(f"اختر معاينة لتعديلها - {date}", day_ids, key=f"select_{date}")
                         if selected_id_for_edit:
