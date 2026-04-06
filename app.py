@@ -15,7 +15,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-UPLOAD_FOLDER = os.path.abspath("uploaded_reports")
+UPLOAD_FOLDER = "uploaded_reports"
 if not os.path.exists(UPLOAD_FOLDER): 
     os.makedirs(UPLOAD_FOLDER)
 
@@ -26,77 +26,167 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('''CREATE TABLE IF NOT EXISTS repairs
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                  client_name TEXT, 
-                  phone TEXT,
-                  tech_name TEXT, 
-                  assistant_name TEXT, 
-                  visit_date TEXT,
-                  governorate TEXT, 
-                  address TEXT, 
-                  report TEXT,
-                  notes TEXT, 
-                  file_name TEXT, 
-                  cost TEXT)''')
-    
-    try:
-        cursor.execute("ALTER TABLE repairs ADD COLUMN file_name TEXT")
-    except:
-        pass
-    
-    cursor.execute('''CREATE TABLE IF NOT EXISTS staff
+    conn.cursor().execute('''CREATE TABLE IF NOT EXISTS repairs
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, client_name TEXT, phone TEXT,
+                  tech_name TEXT, assistant_name TEXT, visit_date TEXT,
+                  governorate TEXT, address TEXT, report TEXT,
+                  notes TEXT, file_name TEXT, cost TEXT)''')
+    conn.cursor().execute('''CREATE TABLE IF NOT EXISTS staff
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)''')
-    
     conn.commit()
     conn.close()
-
 init_db()
 
-def display_pdf(file_name):
-    """عرض ملف PDF من اسم الملف المخزن في قاعدة البيانات"""
+def display_pdf_pdfjs(file_name):
+    """عرض PDF باستخدام PDF.js من Mozilla"""
     try:
         if not file_name:
-            st.error("❌ لا يوجد ملف مرفق")
             return
         
-        actual_path = os.path.join(UPLOAD_FOLDER, file_name)
-       
-        if not os.path.exists(actual_path):
+        file_path = os.path.join(UPLOAD_FOLDER, file_name)
+        if not os.path.exists(file_path):
             st.error(f"⚠️ الملف غير موجود: {file_name}")
-            st.info("💡 قد يكون الملف قد تم حذفه أو نقله. يمكنك رفع ملف جديد من خلال التعديل.")
             return
         
-        with open(actual_path, "rb") as f:
+        # قراءة الملف وتحويله لـ base64
+        with open(file_path, "rb") as f:
             pdf_bytes = f.read()
         
-        # أزرار التحميل والعرض خارج الـ form
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.download_button(
-                label="⬇️ تحميل التقرير PDF",
-                data=pdf_bytes,
-                file_name=file_name,
-                mime="application/pdf",
-                use_container_width=True,
-                key=f"download_{file_name}"
-            )
-        with col2:
-            st.info("📌 جرب تشغل المتصفح **Firefox** لو عايز تشوف الـ PDF مباشرة في الصفحة")
-        
         base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-        pdf_display = f'''
-        <iframe src="data:application/pdf;base64,{base64_pdf}" 
-                width="100%" height="700" 
-                type="application/pdf" style="border: none;">
-        </iframe>
+        
+        # استخدام PDF.js لعرض PDF
+        pdf_viewer = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                #pdf-container {{
+                    width: 100%;
+                    height: 800px;
+                    border: 2px solid #444;
+                    border-radius: 10px;
+                    background: #f0f0f0;
+                }}
+                .controls {{
+                    margin: 10px 0;
+                    text-align: center;
+                }}
+                button {{
+                    background-color: #ff4b4b;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    margin: 0 5px;
+                    border-radius: 5px;
+                    cursor: pointer;
+                }}
+                button:hover {{
+                    background-color: #ff6b6b;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="controls">
+                <button onclick="prevPage()">⬅️ السابق</button>
+                <span>الصفحة <span id="page_num"></span> / <span id="page_count"></span></span>
+                <button onclick="nextPage()">التالي ➡️</button>
+            </div>
+            <canvas id="pdf-canvas" style="width:100%; border:1px solid #ddd;"></canvas>
+            
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+            <script>
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+                
+                let pdfDoc = null;
+                let pageNum = 1;
+                let pageRendering = false;
+                let pageNumPending = null;
+                let scale = 1.5;
+                let canvas = document.getElementById('pdf-canvas');
+                let ctx = canvas.getContext('2d');
+                
+                function renderPage(num) {{
+                    pageRendering = true;
+                    pdfDoc.getPage(num).then(function(page) {{
+                        let viewport = page.getViewport({{scale: scale}});
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+                        
+                        let renderContext = {{
+                            canvasContext: ctx,
+                            viewport: viewport
+                        }};
+                        let renderTask = page.render(renderContext);
+                        
+                        renderTask.promise.then(function() {{
+                            pageRendering = false;
+                            if (pageNumPending !== null) {{
+                                renderPage(pageNumPending);
+                                pageNumPending = null;
+                            }}
+                        }});
+                    }});
+                    
+                    document.getElementById('page_num').textContent = num;
+                }}
+                
+                function queueRenderPage(num) {{
+                    if (pageRendering) {{
+                        pageNumPending = num;
+                    }} else {{
+                        renderPage(num);
+                    }}
+                }}
+                
+                function prevPage() {{
+                    if (pageNum <= 1) return;
+                    pageNum--;
+                    queueRenderPage(pageNum);
+                }}
+                
+                function nextPage() {{
+                    if (pageNum >= pdfDoc.numPages) return;
+                    pageNum++;
+                    queueRenderPage(pageNum);
+                }}
+                
+                let pdfData = atob('{base64_pdf}');
+                let loadingTask = pdfjsLib.getDocument({{data: pdfData}});
+                loadingTask.promise.then(function(pdf) {{
+                    pdfDoc = pdf;
+                    document.getElementById('page_count').textContent = pdfDoc.numPages;
+                    renderPage(pageNum);
+                }});
+            </script>
+        </body>
+        </html>
         '''
-        st.markdown(pdf_display, unsafe_allow_html=True)
+        
+        st.components.v1.html(pdf_viewer, height=900, scrolling=True)
+        
+        # زر تحميل احتياطي
+        st.download_button(
+            label="📥 تحميل PDF (احتياطي)",
+            data=pdf_bytes,
+            file_name=file_name,
+            mime="application/pdf",
+            use_container_width=True
+        )
         
     except Exception as e:
         st.error(f"خطأ في عرض الملف: {e}")
+        # في حالة الخطأ، نعرض رابط التحميل فقط
+        file_path = os.path.join(UPLOAD_FOLDER, file_name)
+        if os.path.exists(file_path):
+            with open(file_path, "rb") as f:
+                pdf_bytes = f.read()
+            st.download_button(
+                label="📥 تحميل PDF",
+                data=pdf_bytes,
+                file_name=file_name,
+                mime="application/pdf",
+                use_container_width=True
+            )
 
 ALL_GOVS = ["القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "البحيرة", "القليوبية", "الغربية", "المنوفية", "الشرقية", "دمياط", "بورسعيد", "السويس", "الإسماعيلية", "كفر الشيخ", "الفيوم", "بني سويف", "المنيا", "أسيوط", "سوهاج", "قنا", "الأقصر", "أسوان"]
 tab1, tab2, tab3 = st.tabs(["➕ تسجيل معاينة جديدة", "📊 سجل المعاينات والإدارة", "👥 إدارة الفنيين"])
@@ -122,7 +212,6 @@ with tab3:
                         st.error("الاسم موجود بالفعل")
                 else:
                     st.warning("برجاء كتابة اسم")
-    
     with col_f2:
         conn = get_db_connection()
         staff_list = pd.read_sql_query("SELECT * FROM staff", conn)
@@ -139,11 +228,7 @@ with tab3:
                     conn.close()
                     st.rerun()
 
-# جلب أسماء الفنيين
-conn = get_db_connection()
-staff_df = pd.read_sql_query("SELECT * FROM staff", conn)
-conn.close()
-staff_names = ["لم يتم التحديد"] + [row['name'] for _, row in staff_df.iterrows()] if not staff_df.empty else ["لم يتم التحديد"]
+staff_names = ["لم يتم التحديد"] + [row['name'] for _, row in staff_list.iterrows()] if not staff_list.empty else ["لم يتم التحديد"]
 
 # --- التبويب الأول: التسجيل ---
 with tab1:
@@ -170,70 +255,51 @@ with tab1:
                 file_path = os.path.join(UPLOAD_FOLDER, file_name)
                 with open(file_path, "wb") as f:
                     f.write(file.getbuffer())
-            
             conn = get_db_connection()
-            conn.cursor().execute(
-                "INSERT INTO repairs (client_name, phone, visit_date, governorate, address, report, file_name, cost, tech_name, assistant_name, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (name, phone, str(date_v), gov, addr, rep, file_name, cost, "", "", "")
-            )
+            conn.cursor().execute("INSERT INTO repairs (client_name, phone, visit_date, governorate, address, report, file_name, cost, tech_name, assistant_name, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                                 (name, phone, str(date_v), gov, addr, rep, file_name, cost, "", "", ""))
             conn.commit()
             conn.close()
             st.success("✅ تم الحفظ بنجاح!")
-            st.balloons()
 
 # --- التبويب الثاني: الإدارة ---
 with tab2:
     st.subheader("📊 سجل المعاينات")
     conn = get_db_connection()
-    df_raw = pd.read_sql_query(
-        "SELECT id, client_name as 'العميل', phone as 'التليفون', tech_name as 'الفني', cost as 'التكلفة', visit_date as 'التاريخ', file_name FROM repairs ORDER BY id DESC", 
-        conn
-    )
+    df_raw = pd.read_sql_query("SELECT id, client_name as 'العميل', phone as 'التليفون', tech_name as 'الفني', cost as 'التكلفة', visit_date as 'التاريخ', file_name FROM repairs ORDER BY id DESC", conn)
     conn.close()
-    
     if not df_raw.empty:
         search_col1, search_col2 = st.columns([2, 1])
         with search_col1:
             search_query = st.text_input("🔍 ابحث بالاسم، التليفون، أو الفني", placeholder="اكتب للبحث...")
         with search_col2:
             date_filter = st.date_input("📅 فلترة بالتاريخ", value=None)
-        
         df = df_raw.copy()
-        
+       
         def make_wa_link(phone_num):
             p = str(phone_num).strip()
-            p = ''.join(filter(str.isdigit, p))
-            if not p.startswith('2') and len(p) == 11:
-                p = '2' + p
-            elif not p.startswith('2') and len(p) == 10:
-                p = '20' + p
-            return f"https://wa.me/{p}"
-        
+            num = p if p.startswith('2') else '2' + p
+            return f"https://wa.me/{num}"
+       
         df['واتساب'] = df['التليفون'].apply(make_wa_link)
-        
         if search_query:
             df = df[df['العميل'].str.contains(search_query, na=False, case=False) |
                     df['التليفون'].str.contains(search_query, na=False) |
                     df['الفني'].str.contains(search_query, na=False, case=False)]
         if date_filter:
             df = df[df['التاريخ'] == str(date_filter)]
-        
         st.write(f"🔎 تم العثور على {len(df)} سجل")
-        
+       
         event = st.dataframe(
             df.drop(columns=['id', 'file_name']),
             use_container_width=True,
             on_select="rerun",
             selection_mode="single-row",
             column_config={
-                "واتساب": st.column_config.LinkColumn(
-                    "واتساب", 
-                    display_text="📱 مراسلة",
-                    help="انقر للمراسلة عبر واتساب"
-                )
+                "واتساب": st.column_config.LinkColumn("واتساب", display_text="💬 مراسلة")
             }
         )
-        
+       
         selected_rows = event.selection.rows
         if selected_rows:
             selected_index = selected_rows[0]
@@ -246,14 +312,15 @@ with tab2:
             row = conn.execute("SELECT * FROM repairs WHERE id=?", (selected_id,)).fetchone()
             conn.close()
            
-            # عرض الملف خارج الـ form
+            # عرض PDF باستخدام PDF.js
             if row['file_name']:
-                st.info(f"📎 الملف المرفق الحالي: {row['file_name']}")
-                # عرض زر عرض الملف خارج الفورم
-                if st.button("📄 عرض ملف الـ PDF", key=f"view_pdf_{selected_id}"):
-                    display_pdf(row['file_name'])
+                st.info(f"📎 الملف المرفق: {row['file_name']}")
+                display_pdf_pdfjs(row['file_name'])
                 st.markdown("---")
-            
+            else:
+                st.info("📭 لا يوجد ملف مرفق")
+                st.markdown("---")
+           
             with st.form(f"edit_form_{selected_id}"):
                 col_l, col_r = st.columns(2)
                 with col_l:
@@ -272,21 +339,17 @@ with tab2:
                 u_notes = st.text_area("ملاحظات إضافية", row['notes'])
                 st.write(f"**وصف العطل المسجل:** {row['report']}")
                 st.markdown("---")
-                
                 new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
-                
                 b_save, b_del = st.columns([1, 1])
                
                 if b_save.form_submit_button("💾 حفظ التعديلات"):
                     file_name = row['file_name']
-                    
                     if new_pdf:
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
                         file_path = os.path.join(UPLOAD_FOLDER, file_name)
                         with open(file_path, "wb") as f:
                             f.write(new_pdf.getbuffer())
-                        
                         if row['file_name']:
                             old_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
                             if os.path.exists(old_path):
@@ -296,13 +359,11 @@ with tab2:
                                     pass
                    
                     conn = get_db_connection()
-                    conn.cursor().execute(
-                        "UPDATE repairs SET client_name=?, phone=?, tech_name=?, assistant_name=?, cost=?, governorate=?, address=?, notes=?, visit_date=?, file_name=? WHERE id=?",
-                        (u_name, u_phone, u_tech, u_assist, u_cost, u_gov, u_addr, u_notes, str(u_date), file_name, selected_id)
-                    )
+                    conn.cursor().execute("UPDATE repairs SET client_name=?, phone=?, tech_name=?, assistant_name=?, cost=?, governorate=?, address=?, notes=?, visit_date=?, file_name=? WHERE id=?",
+                                        (u_name, u_phone, u_tech, u_assist, u_cost, u_gov, u_addr, u_notes, str(u_date), file_name, selected_id))
                     conn.commit()
                     conn.close()
-                    st.success("✅ تم التحديث بنجاح!")
+                    st.success("تم التحديث!")
                     st.rerun()
                
                 if b_del.form_submit_button("🗑️ مسح المعاينة"):
@@ -313,12 +374,11 @@ with tab2:
                                 os.remove(file_to_delete)
                             except:
                                 pass
-                    
                     conn = get_db_connection()
                     conn.cursor().execute("DELETE FROM repairs WHERE id=?", (selected_id,))
                     conn.commit()
                     conn.close()
-                    st.success("🗑️ تم مسح المعاينة بنجاح!")
+                    st.success("تم المسح!")
                     st.rerun()
     else:
-        st.info("📭 لا توجد سجلات حالياً.")
+        st.info("لا توجد سجلات حالياً.")
