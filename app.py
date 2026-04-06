@@ -213,7 +213,7 @@ def check_password():
         return False
     return True
 
-# ==================== مجلدات مؤقتة للملفات ====================
+# ==================== مجلدات ====================
 UPLOAD_FOLDER = "uploaded_reports"
 BACKUP_FOLDER = "backups"
 
@@ -252,37 +252,12 @@ def supabase_delete(table, id):
     except:
         return False
 
-# ==================== دوال البيانات مع إعادة تسمية الأعمدة ====================
+# ==================== دوال البيانات ====================
 def get_repairs():
     data = supabase_get("repairs")
     if data and len(data) > 0:
         df = pd.DataFrame(data)
-        
-        column_mapping = {
-            'id': 'id',
-            'client_name': 'اسم العميل',
-            'phone': 'رقم التليفون',
-            'phone2': 'رقم تليفون 2',
-            'tech_name': 'اسم الفني',
-            'assistant_name': 'اسم المساعد',
-            'visit_date': 'تاريخ المعاينة',
-            'governorate': 'المحافظة',
-            'address': 'العنوان',
-            'report': 'وصف العطل',
-            'notes': 'ملاحظات',
-            'file_name': 'اسم الملف',
-            'cost': 'التكلفة',
-            'status': 'الحالة',
-            'created_date': 'تاريخ الإنشاء'
-        }
-        
-        existing_mapping = {k: v for k, v in column_mapping.items() if k in df.columns}
-        df = df.rename(columns=existing_mapping)
-        
-        if 'الحالة' not in df.columns:
-            df['الحالة'] = 'جديدة'
-        if 'تاريخ المعاينة' in df.columns:
-            df = df.sort_values('تاريخ المعاينة', ascending=False)
+        # الحفاظ على الأسماء الإنجليزية للاستخدام الداخلي
         return df
     return pd.DataFrame()
 
@@ -298,10 +273,7 @@ def delete_repair(repair_id):
 def get_staff():
     data = supabase_get("staff")
     if data and len(data) > 0:
-        df = pd.DataFrame(data)
-        column_mapping = {'id': 'id', 'name': 'اسم الفني'}
-        df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
-        return df
+        return pd.DataFrame(data)
     return pd.DataFrame()
 
 def add_staff(name):
@@ -313,26 +285,18 @@ def delete_staff(staff_id):
 def get_customers():
     data = supabase_get("customers")
     if data and len(data) > 0:
-        df = pd.DataFrame(data)
-        column_mapping = {
-            'id': 'id', 'name': 'الاسم', 'phone': 'رقم التليفون',
-            'phone2': 'رقم تليفون 2', 'address': 'العنوان',
-            'governorate': 'المحافظة', 'created_date': 'تاريخ التسجيل',
-            'total_visits': 'عدد الزيارات', 'total_cost': 'إجمالي المصروف'
-        }
-        df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
-        return df
+        return pd.DataFrame(data)
     return pd.DataFrame()
 
 def add_or_update_customer(name, phone, phone2, address, governorate):
     customers = get_customers()
-    if not customers.empty and 'رقم التليفون' in customers.columns:
-        existing = customers[customers['رقم التليفون'] == phone]
+    if not customers.empty and 'phone' in customers.columns:
+        existing = customers[customers['phone'] == phone]
         if not existing.empty:
             customer = existing.iloc[0]
             supabase_put("customers", customer['id'], {
                 "name": name, "phone2": phone2, "address": address,
-                "governorate": governorate, "total_visits": customer.get('عدد الزيارات', 0) + 1
+                "governorate": governorate, "total_visits": customer.get('total_visits', 0) + 1
             })
         else:
             supabase_post("customers", {
@@ -353,11 +317,11 @@ def update_customer_cost(phone, cost):
     try:
         cost_val = float(cost) if cost else 0
         customers = get_customers()
-        if not customers.empty and 'رقم التليفون' in customers.columns:
-            existing = customers[customers['رقم التليفون'] == phone]
+        if not customers.empty and 'phone' in customers.columns:
+            existing = customers[customers['phone'] == phone]
             if not existing.empty:
                 customer = existing.iloc[0]
-                current_cost = customer.get('إجمالي المصروف', 0)
+                current_cost = customer.get('total_cost', 0)
                 supabase_put("customers", customer['id'], {"total_cost": current_cost + cost_val})
     except:
         pass
@@ -365,15 +329,7 @@ def update_customer_cost(phone, cost):
 def get_inventory():
     data = supabase_get("inventory")
     if data and len(data) > 0:
-        df = pd.DataFrame(data)
-        column_mapping = {
-            'id': 'id', 'part_name': 'اسم القطعة', 'part_code': 'الكود',
-            'quantity': 'الكمية', 'min_quantity': 'الحد الأدنى',
-            'price': 'السعر', 'unit': 'الوحدة', 'supplier': 'المورد',
-            'last_updated': 'آخر تحديث'
-        }
-        df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
-        return df
+        return pd.DataFrame(data)
     return pd.DataFrame()
 
 def add_inventory_item(part_name, part_code, quantity, min_quantity, price, unit, supplier):
@@ -389,7 +345,7 @@ def update_inventory_quantity(part_id, quantity_change):
     if not inventory.empty:
         part = inventory[inventory['id'] == part_id]
         if not part.empty:
-            new_quantity = part.iloc[0]['الكمية'] + quantity_change
+            new_quantity = part.iloc[0]['quantity'] + quantity_change
             supabase_put("inventory", part_id, {
                 "quantity": new_quantity,
                 "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -400,21 +356,16 @@ def delete_inventory_item(part_id):
 
 def get_low_stock_items():
     inventory = get_inventory()
-    if not inventory.empty and 'الكمية' in inventory.columns and 'الحد الأدنى' in inventory.columns:
-        return inventory[inventory['الكمية'] <= inventory['الحد الأدنى']]
+    if not inventory.empty and 'quantity' in inventory.columns and 'min_quantity' in inventory.columns:
+        return inventory[inventory['quantity'] <= inventory['min_quantity']]
     return pd.DataFrame()
 
 def get_notifications():
     data = supabase_get("notifications")
     if data and len(data) > 0:
         df = pd.DataFrame(data)
-        column_mapping = {
-            'id': 'id', 'title': 'العنوان', 'message': 'الرسالة',
-            'type': 'النوع', 'created_date': 'تاريخ الإنشاء', 'is_read': 'تمت القراءة'
-        }
-        df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
-        if 'تمت القراءة' in df.columns:
-            return df[df['تمت القراءة'] == 0].sort_values('تاريخ الإنشاء', ascending=False)
+        if 'is_read' in df.columns:
+            return df[df['is_read'] == 0].sort_values('created_date', ascending=False)
         return df
     return pd.DataFrame()
 
@@ -543,14 +494,14 @@ def get_dashboard_stats():
     today_count = 0
     month_count = 0
     
-    if not repairs_df.empty and 'تاريخ المعاينة' in repairs_df.columns:
-        today_count = len(repairs_df[repairs_df['تاريخ المعاينة'] == today])
-        month_count = len(repairs_df[repairs_df['تاريخ المعاينة'].str.startswith(current_month)])
+    if not repairs_df.empty and 'visit_date' in repairs_df.columns:
+        today_count = len(repairs_df[repairs_df['visit_date'] == today])
+        month_count = len(repairs_df[repairs_df['visit_date'].str.startswith(current_month)])
     
     total_revenue = 0
-    if not repairs_df.empty and 'التكلفة' in repairs_df.columns:
+    if not repairs_df.empty and 'cost' in repairs_df.columns:
         try:
-            repairs_df['cost_clean'] = repairs_df['التكلفة'].astype(str).str.replace('ج.م', '').str.replace('EGP', '').str.replace(' ', '').str.replace(',', '')
+            repairs_df['cost_clean'] = repairs_df['cost'].astype(str).str.replace('ج.م', '').str.replace('EGP', '').str.replace(' ', '').str.replace(',', '')
             repairs_df['cost_clean'] = pd.to_numeric(repairs_df['cost_clean'], errors='coerce').fillna(0)
             total_revenue = repairs_df['cost_clean'].sum()
         except:
@@ -560,8 +511,8 @@ def get_dashboard_stats():
     low_stock = len(get_low_stock_items())
     
     status_counts = {}
-    if not repairs_df.empty and 'الحالة' in repairs_df.columns:
-        status_counts = repairs_df['الحالة'].value_counts().to_dict()
+    if not repairs_df.empty and 'status' in repairs_df.columns:
+        status_counts = repairs_df['status'].value_counts().to_dict()
     
     return {
         'total': total, 'today': today_count, 'month': month_count,
@@ -656,9 +607,9 @@ def show_dashboard():
             """, unsafe_allow_html=True)
     
     repairs_df = get_repairs()
-    if not repairs_df.empty and 'تاريخ المعاينة' in repairs_df.columns:
-        repairs_df['تاريخ المعاينة'] = pd.to_datetime(repairs_df['تاريخ المعاينة'])
-        daily_counts = repairs_df.groupby(repairs_df['تاريخ المعاينة'].dt.date).size().reset_index(name='count')
+    if not repairs_df.empty and 'visit_date' in repairs_df.columns:
+        repairs_df['visit_date'] = pd.to_datetime(repairs_df['visit_date'])
+        daily_counts = repairs_df.groupby(repairs_df['visit_date'].dt.date).size().reset_index(name='count')
         daily_counts.columns = ['التاريخ', 'عدد المعاينات']
         
         fig = px.bar(daily_counts, x='التاريخ', y='عدد المعاينات', title='المعاينات اليومية', color_discrete_sequence=['#00b4d8'])
@@ -712,7 +663,7 @@ with st.sidebar:
         for _, notif in unread_notifs.iterrows():
             col1, col2 = st.columns([4, 1])
             with col1:
-                st.info(f"**{notif['العنوان']}**\n\n{notif['الرسالة']}")
+                st.info(f"**{notif['title']}**\n\n{notif['message']}")
             with col2:
                 if st.button("✔️", key=f"read_{notif['id']}"):
                     mark_notification_read(notif['id'])
@@ -762,7 +713,7 @@ with tab3:
             for _, row in staff_df.iterrows():
                 col_name, col_del = st.columns([3, 1])
                 with col_name:
-                    st.write(f"👨‍🔧 {row['اسم الفني']}")
+                    st.write(f"👨‍🔧 {row['name']}")
                 with col_del:
                     if st.button("🗑️ حذف", key=f"del_staff_{row['id']}", use_container_width=True):
                         delete_staff(row['id'])
@@ -772,7 +723,7 @@ with tab3:
 
 # جلب أسماء الفنيين
 staff_df = get_staff()
-staff_names = ["جميع الفنيين"] + staff_df['اسم الفني'].tolist() if not staff_df.empty else ["جميع الفنيين"]
+staff_names = ["جميع الفنيين"] + staff_df['name'].tolist() if not staff_df.empty else ["جميع الفنيين"]
 
 # ==================== تبويب تسجيل معاينة جديدة ====================
 with tab1:
@@ -805,14 +756,14 @@ with tab1:
         with st.expander("🔧 استخدام قطع غيار (اختياري)"):
             parts_df = get_inventory()
             if not parts_df.empty:
-                parts_list = [f"{row['اسم القطعة']} ({row['الكود']}) - متوفر: {row['الكمية']}" for _, row in parts_df.iterrows()]
+                parts_list = [f"{row['part_name']} ({row['part_code']}) - متوفر: {row['quantity']}" for _, row in parts_df.iterrows()]
                 selected_parts = st.multiselect("اختر قطع الغيار المستخدمة", parts_list)
                 parts_usage = []
                 for part_str in selected_parts:
                     part_code = part_str.split("(")[1].split(")")[0]
-                    part_info = parts_df[parts_df['الكود'] == part_code].iloc[0]
-                    qty = st.number_input(f"الكمية المستخدمة من {part_info['اسم القطعة']}", min_value=1, max_value=part_info['الكمية'], value=1, key=f"qty_{part_code}")
-                    parts_usage.append({"code": part_code, "qty": qty, "price": part_info['السعر']})
+                    part_info = parts_df[parts_df['part_code'] == part_code].iloc[0]
+                    qty = st.number_input(f"الكمية المستخدمة من {part_info['part_name']}", min_value=1, max_value=part_info['quantity'], value=1, key=f"qty_{part_code}")
+                    parts_usage.append({"code": part_code, "qty": qty, "price": part_info['price']})
             else:
                 st.info("لا توجد قطع غيار متاحة في المخزون")
                 parts_usage = []
@@ -863,73 +814,188 @@ with tab1:
                 else:
                     st.error("❌ حدث خطأ في حفظ البيانات")
 
-# ==================== تبويب سجل المعاينات (الإصدار المعتمد) ====================
+# ==================== تبويب سجل المعاينات ====================
 with tab2:
-    st.markdown("## 📋 سجل المعاينات")
+    st.subheader("📋 سجل المعاينات")
     
     repairs_df = get_repairs()
     
     if not repairs_df.empty:
-        # --- التصفية ---
-        c1, c2, c3 = st.columns(3)
-        with c1: search_name = st.text_input("👤 بحث باسم العميل")
-        with c2: search_phone = st.text_input("📞 بحث برقم التليفون")
-        with c3: tech_filter = st.selectbox("👨‍🔧 فلترة بالفني", staff_names)
-            
-        filtered_df = repairs_df.copy()
-        if search_name: filtered_df = filtered_df[filtered_df['اسم العميل'].str.contains(search_name, na=False)]
-        if search_phone: filtered_df = filtered_df[filtered_df['رقم التليفون'].str.contains(search_phone, na=False)]
-        if tech_filter != "جميع الفنيين": filtered_df = filtered_df[filtered_df['اسم الفني'] == tech_filter]
-
-        if not filtered_df.empty:
-            filtered_df['تاريخ المعاينة'] = pd.to_datetime(filtered_df['تاريخ المعاينة']).dt.date
-            days = sorted(filtered_df['تاريخ المعاينة'].unique(), reverse=True)
-            
-            for day in days:
-                st.markdown(f"""<div style="background:#00b4d8; padding:8px; border-radius:10px; margin:20px 0; text-align:center;"><h3 style="margin:0; color:white;">📅 {day}</h3></div>""", unsafe_allow_html=True)
-                
-                day_data = filtered_df[filtered_df['تاريخ المعاينة'] == day]
-                
-                # عرض المعاينات في صفوف منظمة (شكل الجدول اللي يفتح النفس)
-                for index, row in day_data.iterrows():
-                    with st.container():
-                        # كارت المعاينة
-                        st.markdown(f"""
-                        <div style="background:#1a2634; padding:15px; border-right:5px solid #00b4d8; border-radius:10px; margin-bottom:10px;">
-                            <table style="width:100%; border:none; color:white;">
-                                <tr>
-                                    <td style="width:30%;"><b>👤 العميل:</b> {row['اسم العميل']}</td>
-                                    <td style="width:30%;"><b>📞 التليفون:</b> {row['رقم التليفون']}</td>
-                                    <td style="width:40%;"><b>📍 العنوان:</b> {row['المحافظة']} - {row['العنوان']}</td>
-                                </tr>
-                                <tr>
-                                    <td><b>👨‍🔧 الفني:</b> {row['اسم الفني']}</td>
-                                    <td><b>💰 التكلفة:</b> {row['التكلفة']}</td>
-                                    <td><b>🛠️ العطل:</b> {row['وصف العطل']}</td>
-                                </tr>
-                            </table>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # أزرار الأكشن (واتساب وعرض تقرير) تحت الكارت مباشرة
-                        btn_col1, btn_col2, _ = st.columns([1, 1, 3])
-                        with btn_col1:
-                            wa_url = f"https://wa.me/2{str(row['رقم التليفون']).strip()}"
-                            st.markdown(f'<a href="{wa_url}" target="_blank" style="text-decoration:none;"><div style="background:#25D366; color:white; padding:8px; border-radius:8px; text-align:center; font-weight:bold;">🟢 واتساب</div></a>', unsafe_allow_html=True)
-                        
-                        with btn_col2:
-                            file_name = row.get('اسم الملف', '')
-                            if file_name and str(file_name).strip() != "None":
-                                if st.button(f"📄 عرض التقرير", key=f"pdf_view_{row['id']}"):
-                                    # نداء مباشر لدالة الـ PDF اللي أنت كاتبها في الجزء التاني
-                                    display_pdf_pdfjs(str(file_name).strip())
-
-                        st.markdown("<br>", unsafe_allow_html=True)
-        else:
-            st.warning("⚠️ مفيش بيانات مطابقة للبحث")
-    else:
-        st.info("📭 سجل المعاينات فاضي")
+        st.markdown("### 🔍 بحث وتصفية متقدم")
         
+        col_f1, col_f2, col_f3 = st.columns(3)
+        
+        with col_f1:
+            search_query = st.text_input("🔍 بحث باسم العميل", placeholder="اكتب اسم العميل...")
+        
+        with col_f2:
+            search_phone = st.text_input("📞 بحث برقم التليفون", placeholder="اكتب رقم التليفون...")
+        
+        with col_f3:
+            selected_tech = st.selectbox("👨‍🔧 فلترة باسم الفني", staff_names)
+        
+        col_f4, col_f5, col_f6 = st.columns(3)
+        
+        with col_f4:
+            start_date = st.date_input("📅 من تاريخ", value=None)
+        
+        with col_f5:
+            end_date = st.date_input("📅 إلى تاريخ", value=None)
+        
+        with col_f6:
+            selected_status = st.selectbox("📌 فلترة بالحالة", ["الكل"] + STATUS_OPTIONS)
+        
+        df = repairs_df.copy()
+        
+        # تطبيق الفلاتر (باستخدام الأسماء الإنجليزية)
+        if search_query and 'client_name' in df.columns:
+            df = df[df['client_name'].str.contains(search_query, na=False, case=False)]
+        if search_phone and 'phone' in df.columns:
+            df = df[df['phone'].str.contains(search_phone, na=False)]
+        if selected_tech != "جميع الفنيين" and 'tech_name' in df.columns:
+            df = df[df['tech_name'] == selected_tech]
+        if start_date and 'visit_date' in df.columns:
+            df = df[pd.to_datetime(df['visit_date']) >= pd.to_datetime(start_date)]
+        if end_date and 'visit_date' in df.columns:
+            df = df[pd.to_datetime(df['visit_date']) <= pd.to_datetime(end_date)]
+        if selected_status != "الكل" and 'status' in df.columns:
+            df = df[df['status'] == selected_status]
+        
+        if not df.empty:
+            # إعادة تسمية الأعمدة للعرض فقط
+            df_display = df.copy()
+            df_display['العميل'] = df_display['client_name']
+            df_display['التليفون'] = df_display['phone']
+            df_display['تليفون 2'] = df_display['phone2'].fillna('') if 'phone2' in df_display else ""
+            df_display['الفني'] = df_display['tech_name']
+            df_display['التكلفة'] = df_display['cost']
+            df_display['التاريخ'] = df_display['visit_date']
+            df_display['المحافظة'] = df_display['governorate']
+            df_display['العنوان'] = df_display['address']
+            df_display['الحالة'] = df_display['status'].map(lambda x: STATUS_STYLES.get(x, x)) if 'status' in df_display else ""
+            
+            # دالة رابط واتساب
+            def make_whatsapp_link(phone_num):
+                if not phone_num or phone_num == "" or pd.isna(phone_num):
+                    return "#"
+                p = str(phone_num).strip()
+                p = ''.join(filter(str.isdigit, p))
+                if p:
+                    num = p if p.startswith('2') else '2' + p
+                    return f'<a href="https://wa.me/{num}" target="_blank" class="whatsapp-link">🟢 واتساب</a>'
+                return "#"
+            
+            df_display['واتساب'] = df_display['phone'].apply(make_whatsapp_link) if 'phone' in df_display else "#"
+            
+            # ترتيب الأعمدة
+            display_cols = ['العميل', 'التليفون', 'تليفون 2', 'الفني', 'التكلفة', 'التاريخ', 'المحافظة', 'العنوان', 'الحالة', 'واتساب']
+            existing_cols = [col for col in display_cols if col in df_display.columns]
+            df_display = df_display[existing_cols]
+            
+            # عرض الجدول
+            st.write(f"🔎 تم العثور على {len(df_display)} سجل")
+            st.dataframe(df_display, use_container_width=True)
+            
+            # جزء التعديل
+            st.markdown("---")
+            st.markdown("### ✏️ تعديل أو عرض معاينة")
+            
+            ids = df['id'].tolist()
+            if ids:
+                selected_id = st.selectbox("اختر معاينة للتعديل", ids)
+                row = df[df['id'] == selected_id].iloc[0]
+                
+                # عرض PDF
+                if row.get('file_name'):
+                    with st.expander("📄 عرض التقرير"):
+                        display_pdf_pdfjs(row['file_name'])
+                
+                # نموذج التعديل
+                with st.form(f"edit_form_{selected_id}"):
+                    col_l, col_r = st.columns(2)
+                    with col_l:
+                        u_name = st.text_input("اسم العميل", row['client_name'])
+                        u_phone = st.text_input("رقم التليفون الأول", row['phone'], max_chars=11)
+                        u_phone2 = st.text_input("رقم التليفون الثاني", row['phone2'] if row['phone2'] else "", max_chars=11)
+                        current_tech_idx = staff_names.index(row['tech_name']) if row['tech_name'] in staff_names else 0
+                        if current_tech_idx == 0 and "جميع الفنيين" in staff_names:
+                            current_tech_idx = 0
+                        u_tech = st.selectbox("اسم الفني", ["لم يتم التحديد"] + staff_names[1:], index=current_tech_idx if current_tech_idx > 0 else 0)
+                    with col_r:
+                        u_cost = st.text_input("التكلفة", row['cost'])
+                        current_gov_idx = ALL_GOVS.index(row['governorate']) if row['governorate'] in ALL_GOVS else 0
+                        u_gov = st.selectbox("المحافظة", ALL_GOVS, index=current_gov_idx)
+                        u_addr = st.text_input("العنوان", row['address'])
+                        u_date = st.date_input("تاريخ المعاينة", datetime.strptime(row['visit_date'], '%Y-%m-%d') if row.get('visit_date') else datetime.now())
+                        u_status = st.selectbox("حالة المعاينة", STATUS_OPTIONS, index=STATUS_OPTIONS.index(row['status']) if row['status'] in STATUS_OPTIONS else 0)
+                    
+                    u_notes = st.text_area("ملاحظات إضافية", row['notes'] if row['notes'] else "")
+                    st.write(f"**وصف العطل المسجل:** {row['report']}")
+                    st.markdown("---")
+                    new_pdf = st.file_uploader("تحديث التقرير (PDF)", type=['pdf'], key=f"pdf_up_{selected_id}")
+                    
+                    col_save, col_del = st.columns(2)
+                    
+                    with col_save:
+                        if st.form_submit_button("💾 حفظ التعديلات", use_container_width=True):
+                            valid1, msg1 = validate_phone(u_phone)
+                            valid2, msg2 = validate_phone(u_phone2) if u_phone2 else (True, "")
+                            
+                            if not valid1:
+                                st.error(msg1)
+                            elif not valid2:
+                                st.error(msg2)
+                            else:
+                                file_name = row.get('file_name', '')
+                                if new_pdf:
+                                    if not os.path.exists(UPLOAD_FOLDER):
+                                        os.makedirs(UPLOAD_FOLDER)
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    file_name = f"{u_name}_{timestamp}_{new_pdf.name}"
+                                    file_path = os.path.join(UPLOAD_FOLDER, file_name)
+                                    with open(file_path, "wb") as f:
+                                        f.write(new_pdf.getbuffer())
+                                    if row.get('file_name'):
+                                        old_path = os.path.join(UPLOAD_FOLDER, row['file_name'])
+                                        if os.path.exists(old_path):
+                                            try:
+                                                os.remove(old_path)
+                                            except:
+                                                pass
+                                
+                                update_repair(selected_id, {
+                                    "client_name": u_name, "phone": u_phone, "phone2": u_phone2,
+                                    "tech_name": u_tech if u_tech != "لم يتم التحديد" else "",
+                                    "cost": u_cost, "governorate": u_gov,
+                                    "address": u_addr, "notes": u_notes, "visit_date": str(u_date),
+                                    "status": u_status, "file_name": file_name
+                                })
+                                
+                                add_or_update_customer(u_name, u_phone, u_phone2, u_addr, u_gov)
+                                update_customer_cost(u_phone, u_cost)
+                                
+                                st.success("✅ تم التحديث بنجاح!")
+                                st.rerun()
+                    
+                    with col_del:
+                        if st.session_state.user_role == "admin":
+                            if st.form_submit_button("🗑️ مسح المعاينة", type="secondary", use_container_width=True):
+                                if row.get('file_name'):
+                                    file_to_delete = os.path.join(UPLOAD_FOLDER, row['file_name'])
+                                    if os.path.exists(file_to_delete):
+                                        try:
+                                            os.remove(file_to_delete)
+                                        except:
+                                            pass
+                                delete_repair(selected_id)
+                                add_notification("تم مسح معاينة", f"تم مسح معاينة العميل {row.get('client_name', '')}", "warning")
+                                st.success("🗑️ تم المسح بنجاح!")
+                                st.rerun()
+        else:
+            st.info("📭 لا توجد سجلات تطابق معايير البحث")
+    else:
+        st.info("📭 لا توجد سجلات حالياً.")
+
 # ==================== تبويب إدارة المخزون ====================
 with tab4:
     st.subheader("📦 إدارة المخزون (قطع الغيار)")
@@ -967,21 +1033,21 @@ with tab4:
             st.markdown("### ✏️ تعديل أو حذف")
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                part_options = [f"{row['اسم القطعة']} ({row['الكود']})" for _, row in inventory_df.iterrows()]
+                part_options = [f"{row['part_name']} ({row['part_code']})" for _, row in inventory_df.iterrows()]
                 selected_part = st.selectbox("اختر القطعة", part_options)
             with col2:
                 quantity_change = st.number_input("تغير الكمية (+ للإضافة، - للخصم)", value=0)
             with col3:
                 if st.button("تحديث الكمية", use_container_width=True):
                     part_code = selected_part.split("(")[1].split(")")[0]
-                    part_id = inventory_df[inventory_df['الكود'] == part_code]['id'].values[0]
+                    part_id = inventory_df[inventory_df['part_code'] == part_code]['id'].values[0]
                     update_inventory_quantity(part_id, quantity_change)
                     st.success("✅ تم تحديث الكمية")
                     st.rerun()
             with col4:
                 if st.button("🗑️ حذف القطعة", type="secondary", use_container_width=True):
                     part_code = selected_part.split("(")[1].split(")")[0]
-                    part_id = inventory_df[inventory_df['الكود'] == part_code]['id'].values[0]
+                    part_id = inventory_df[inventory_df['part_code'] == part_code]['id'].values[0]
                     delete_inventory_item(part_id)
                     st.success("✅ تم حذف القطعة")
                     st.rerun()
@@ -993,7 +1059,7 @@ with tab4:
         if not low_stock.empty:
             st.warning("⚠️ القطع التالية تحتاج إلى إعادة طلب:")
             for _, item in low_stock.iterrows():
-                st.markdown(f"- **{item['اسم القطعة']}** ({item['الكود']}): المتبقي {item['الكمية']} (الحد الأدنى {item['الحد الأدنى']})")
+                st.markdown(f"- **{item['part_name']}** ({item['part_code']}): المتبقي {item['quantity']} (الحد الأدنى {item['min_quantity']})")
         else:
             st.success("✅ جميع قطع الغيار ضمن الحدود الآمنة")
 
@@ -1009,26 +1075,26 @@ with tab5:
         st.markdown("### 🔍 البحث عن عميل")
         search_phone = st.text_input("ابحث برقم التليفون", max_chars=11)
         
-        if search_phone and 'رقم التليفون' in customers_df.columns:
-            customer = customers_df[customers_df['رقم التليفون'] == search_phone]
+        if search_phone and 'phone' in customers_df.columns:
+            customer = customers_df[customers_df['phone'] == search_phone]
             if not customer.empty:
-                st.markdown(f"### 👤 معلومات العميل: {customer.iloc[0]['الاسم']}")
+                st.markdown(f"### 👤 معلومات العميل: {customer.iloc[0]['name']}")
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.write(f"**📞 رقم التليفون:** {customer.iloc[0]['رقم التليفون']}")
-                    st.write(f"**📞 رقم تليفون ثاني:** {customer.iloc[0]['رقم تليفون 2']}")
-                    st.write(f"**🏠 العنوان:** {customer.iloc[0]['العنوان']}")
+                    st.write(f"**📞 رقم التليفون:** {customer.iloc[0]['phone']}")
+                    st.write(f"**📞 رقم تليفون ثاني:** {customer.iloc[0]['phone2']}")
+                    st.write(f"**🏠 العنوان:** {customer.iloc[0]['address']}")
                 with col2:
-                    st.write(f"**📍 المحافظة:** {customer.iloc[0]['المحافظة']}")
-                    st.write(f"**📊 عدد الزيارات:** {customer.iloc[0]['عدد الزيارات']}")
-                    st.write(f"**💰 إجمالي المصروف:** {customer.iloc[0]['إجمالي المصروف']} ج.م")
+                    st.write(f"**📍 المحافظة:** {customer.iloc[0]['governorate']}")
+                    st.write(f"**📊 عدد الزيارات:** {customer.iloc[0]['total_visits']}")
+                    st.write(f"**💰 إجمالي المصروف:** {customer.iloc[0]['total_cost']} ج.م")
                 
                 st.markdown("### 📋 معاينات العميل")
                 repairs_history = get_repairs()
-                if not repairs_history.empty and 'رقم التليفون' in repairs_history.columns:
-                    customer_repairs = repairs_history[repairs_history['رقم التليفون'] == search_phone]
+                if not repairs_history.empty and 'phone' in repairs_history.columns:
+                    customer_repairs = repairs_history[repairs_history['phone'] == search_phone]
                     if not customer_repairs.empty:
-                        st.dataframe(customer_repairs[['تاريخ المعاينة', 'اسم العميل', 'التكلفة', 'اسم الفني', 'المحافظة', 'الحالة']], use_container_width=True)
+                        st.dataframe(customer_repairs[['visit_date', 'client_name', 'cost', 'tech_name', 'governorate', 'status']], use_container_width=True)
                     else:
                         st.info("📭 لا توجد معاينات سابقة")
                 else:
