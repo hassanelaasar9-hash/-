@@ -863,17 +863,15 @@ with tab1:
                 else:
                     st.error("❌ حدث خطأ في حفظ البيانات")
 
-# ==================== تبويب سجل المعاينات (الشكل القديم) ====================
-# ==================== تبويب سجل المعاينات (المعدل) ====================
+# ==================== تبويب سجل المعاينات (المعدل للجدول الكلاسيكي) ====================
 with tab2:
-    st.markdown("## 📋 سجل المعاينات الشامل")
+    st.markdown("## 📋 سجل المعاينات")
     
     # جلب البيانات
     repairs_df = get_repairs()
     
     if not repairs_df.empty:
         # --- منطقة البحث والتصفية ---
-        st.markdown("### 🔍 بحث وتصفية متقدم")
         c1, c2, c3 = st.columns(3)
         with c1:
             search_name = st.text_input("👤 بحث باسم العميل")
@@ -891,61 +889,71 @@ with tab2:
         if tech_filter != "جميع الفنيين":
             filtered_df = filtered_df[filtered_df['اسم الفني'] == tech_filter]
 
-        # --- عرض البيانات مع فواصل الأيام ---
         if not filtered_df.empty:
-            # التأكد من تنسيق التاريخ
+            # ترتيب حسب التاريخ
             filtered_df['تاريخ المعاينة'] = pd.to_datetime(filtered_df['تاريخ المعاينة']).dt.date
             days = sorted(filtered_df['تاريخ المعاينة'].unique(), reverse=True)
             
             for day in days:
+                # فاصل اليوم بتصميم واضح
                 st.markdown(f"""
-                <div style="background: linear-gradient(90deg, #00b4d8, transparent); padding: 5px 15px; border-radius: 10px; margin: 20px 0 10px 0;">
-                    <h3 style="margin:0; color:white;">📅 {day.strftime('%Y-%m-%d')}</h3>
+                <div style="background-color: #00b4d8; padding: 10px; border-radius: 10px; margin-top: 25px; margin-bottom: 10px; text-align: center;">
+                    <h3 style="margin:0; color: white;">📅 معاينات يوم: {day}</h3>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 day_data = filtered_df[filtered_df['تاريخ المعاينة'] == day]
                 
-                for _, row in day_data.iterrows():
-                    with st.expander(f"🛠️ {row['اسم العميل']} - {row['اسم الفني']} - {row.get('الحالة', 'جديدة')}"):
-                        col1, col2, col3 = st.columns([2, 2, 1])
+                # عرض البيانات في جدول لكل يوم
+                for index, row in day_data.iterrows():
+                    # إنشاء حاوية لكل سجل تشبه الجدول
+                    with st.container():
+                        col_info, col_actions = st.columns([4, 1])
                         
-                        with col1:
-                            st.write(f"**📞 التليفون:** {row['رقم التليفون']}")
-                            st.write(f"**📍 العنوان:** {row['العنوان']} - {row['المحافظة']}")
-                            st.write(f"**💰 التكلفة:** {row['التكلفة']}")
-                        
-                        with col2:
-                            st.write(f"**📝 وصف العطل:** {row['وصف العطل']}")
-                            st.write(f"**📓 ملاحظات:** {row['ملاحظات']}")
-                            
-                        with col3:
-                            # زر الواتساب باللوجو
-                            phone_num = str(row['رقم التليفون'])
-                            wa_url = f"https://wa.me/2{phone_num}"
+                        with col_info:
+                            # عرض البيانات الأساسية في سطر واحد كأنه صف جدول
                             st.markdown(f"""
-                                <a href="{wa_url}" target="_blank" class="whatsapp-link" style="text-align:center; display:block; margin-bottom:10px;">
-                                    <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="20" style="vertical-align:middle; margin-left:5px;">
-                                    واتساب
+                            <div style="background: #1a1a2e; padding: 15px; border: 1px solid #00b4d8; border-radius: 10px; margin-bottom: 5px;">
+                                <table style="width:100%; color:white; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="width:25%"><b>👤 العميل:</b> {row['اسم العميل']}</td>
+                                        <td style="width:25%"><b>👨‍🔧 الفني:</b> {row['اسم الفني']}</td>
+                                        <td style="width:25%"><b>📞 تليفون:</b> {row['رقم التليفون']}</td>
+                                        <td style="width:25%"><b>📍 العنوان:</b> {row['المحافظة']} - {row['العنوان']}</td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2"><b>📝 العطل:</b> {row['وصف العطل']}</td>
+                                        <td><b>💰 التكلفة:</b> {row['التكلفة']}</td>
+                                        <td><b>🚩 الحالة:</b> {row.get('الحالة', 'جديدة')}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        with col_actions:
+                            # أزرار الإجراءات (واتساب وعرض تقرير)
+                            phone_num = str(row['رقم التليفون']).strip()
+                            wa_url = f"https://wa.me/2{phone_num}"
+                            
+                            st.markdown(f"""
+                                <a href="{wa_url}" target="_blank" style="text-decoration:none;">
+                                    <div style="background-color:#25D366; color:white; padding:8px; border-radius:8px; text-align:center; font-weight:bold; margin-bottom:5px;">
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" width="15"> واتساب
+                                    </div>
                                 </a>
                             """, unsafe_allow_html=True)
                             
-                            # ميكانيزم عرض الـ PDF (نفس الدالة بتاعتك)
-                            if row.get('اسم الملف'):
-                                if st.button(f"📄 عرض التقرير", key=f"view_pdf_{row['id']}"):
-                                    display_pdf_pdfjs(row['اسم الملف'])
-                                    
-                        # خيارات إضافية (تعديل/حذف)
-                        c_edit, c_del = st.columns(2)
-                        with c_edit:
-                            if st.button("✏️ تعديل الحالة", key=f"edit_{row['id']}"):
-                                # هنا يوضع منطق التعديل لو متاح في كودك
-                                pass
+                            # ميكانيزم عرض الـ PDF مع معالجة اسم الملف
+                            file_name = row.get('اسم الملف')
+                            if file_name:
+                                if st.button("📄 عرض التقرير", key=f"btn_pdf_{row['id']}"):
+                                    # تنظيف اسم الملف من أي مسافات زائدة
+                                    display_pdf_pdfjs(file_name.strip())
+            
         else:
-            st.warning("⚠️ لا توجد نتائج تطابق البحث")
+            st.warning("⚠️ لا توجد نتائج للبحث")
     else:
-        st.info("📭 لا توجد معاينات مسجلة في النظام حتى الآن.")
-
+        st.info("📭 لا توجد سجلات حالياً")
 # ==================== تبويب إدارة المخزون ====================
 with tab4:
     st.subheader("📦 إدارة المخزون (قطع الغيار)")
